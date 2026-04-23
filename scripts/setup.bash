@@ -257,7 +257,7 @@ else
     die "hello.c not found"
 fi
 
-if confirm "Update MODULE_DESCRIPTION and MODULE_ALIAS in hello.c?"; then
+if confirm "Update MODULE_DESCRIPTION and MODULE_ALIAS in ${built_module}.c?"; then
     default_desc="${pkg} DKMS module"
     default_alias="${built_module}"
 
@@ -275,7 +275,7 @@ if confirm "Update MODULE_DESCRIPTION and MODULE_ALIAS in hello.c?"; then
     } else {
       s/(MODULE_LICENSE\("[^"]*"\);)/$1\nMODULE_ALIAS("$ENV{PERL_ALIAS}");/m;
     }
-  ' hello.c || die "failed to update description/alias"
+  ' "${built_module}.c" || die "failed to update description/alias"
 fi
 
 if [ "$NEED_SYNC_BACK" -eq 1 ]; then
