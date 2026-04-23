@@ -40,16 +40,18 @@
  * Return: 0 on success, negative error code on failure (e.g., -ENOMEM)
  */
 static int __init hello_dkms_init(void) {
-  /* Modern kernel practice: use pr_* instead of printk(KERN_*) */
-  pr_info("Hello world!\n");
+	/* Modern kernel practice: use pr_* instead of printk(KERN_*) */
+	pr_info("Hello world!\n");
 
-  return 0;
+	return 0;
 }
 
 /**
  * hello_dkms_exit - Module exit point
  */
-static void __exit hello_dkms_exit(void) { pr_info("Goodbye world!\n"); }
+static void __exit hello_dkms_exit(void) {
+	pr_info("Goodbye world!\n");
+}
 
 module_init(hello_dkms_init);
 module_exit(hello_dkms_exit);
