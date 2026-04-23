@@ -8,6 +8,14 @@
 
 # Safe DKMS helper functions — avoid set -e at top-level so sourcing cannot abort the shell.
 # Usage: source ./scripts/dkms-helpers-fixed.sh
+#
+# DKMS_FORCE behavior:
+# By default this script will pass --force to `dkms build` and `dkms install` so
+# installs override existing builds. Set DKMS_FORCE=0 (or false/no) to disable.
+case "${DKMS_FORCE:-1}" in
+0 | false | FALSE | False | no | NO | No) DKMS_FORCE_FLAG="" ;;
+*) DKMS_FORCE_FLAG="--force" ;;
+esac
 
 # Helper: ensure we are in project dir with dkms.conf
 _check_dkms_conf() {
@@ -96,11 +104,11 @@ dkms-install() {
         printf 'dkms add failed\n' >&2
         return 1
     }
-    sudo dkms build -m "$pkg" -v "$ver" || {
+    sudo dkms build -m "$pkg" -v "$ver" $DKMS_FORCE_FLAG || {
         printf 'dkms build failed\n' >&2
         return 1
     }
-    sudo dkms install -m "$pkg" -v "$ver" || {
+    sudo dkms install -m "$pkg" -v "$ver" $DKMS_FORCE_FLAG || {
         printf 'dkms install failed\n' >&2
         return 1
     }
@@ -143,13 +151,13 @@ dkms-update() {
     fi
 
     printf 'Starting dkms build (this may take a while)...\n'
-    if ! sudo dkms build -m "$pkg" -v "$ver"; then
+    if ! sudo dkms build -m "$pkg" -v "$ver" $DKMS_FORCE_FLAG; then
         printf 'dkms build failed\n' >&2
         return 1
     fi
 
     printf 'Installing module via dkms...\n'
-    if ! sudo dkms install -m "$pkg" -v "$ver"; then
+    if ! sudo dkms install -m "$pkg" -v "$ver" $DKMS_FORCE_FLAG; then
         printf 'dkms install failed\n' >&2
         return 1
     fi
