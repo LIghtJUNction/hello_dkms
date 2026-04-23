@@ -178,6 +178,67 @@ dkms-update() {
 
     printf '\nFinished.\n'
     printf 'Run sudo modprobe %s to load the module.\n' "$mod"
+
+    # Offer to reload the module now and optionally follow kernel logs filtered by the module name.
+    # Read from /dev/tty so this works when the script is invoked from other programs.
+    if [ -c /dev/tty ]; then
+        printf '\nWould you like to reload the module %s now? [y/N]: ' "$mod" >/dev/tty
+        read -r _resp </dev/tty || _resp=""
+    else
+        _resp=""
+    fi
+
+    case "$_resp" in
+    [yY] | [yY][eE][sS])
+        # Try to remove the module if currently loaded (ignore failures).
+        if sudo modprobe -r "$mod" >/dev/null 2>&1; then
+            printf 'Unloaded module %s\n' "$mod"
+        else
+            printf 'Module %s was not loaded or could not be unloaded (continuing)\n' "$mod"
+        fi
+
+        # Try to load the module (report failures).
+        if sudo modprobe "$mod"; then
+            printf 'Loaded module %s\n' "$mod"
+        else
+            printf 'Failed to load module %s\n' "$mod" >&2
+        fi
+
+        # Optionally follow kernel logs filtered by module name.
+        if [ -c /dev/tty ]; then
+            printf 'Follow kernel logs for \"%s\" now? [y/N]: ' "$mod" >/dev/tty
+            read -r _follow </dev/tty || _follow=""
+        else
+            _follow=""
+        fi
+
+        case "$_follow" in
+        [yY] | [yY][eE][sS])
+            if command -v journalctl >/dev/null 2>&1; then
+                printf 'Following kernel journal for \"%s\" (Ctrl-C to stop)...\n' "$mod"
+                # Use --grep so the match is literal and not hardcoded.
+                sudo journalctl -k -f --grep "$mod"
+            else
+                printf 'journalctl not available; falling back to tailing dmesg (may not filter reliably).\n'
+                # Use dmesg --follow if available; otherwise use tail on /var/log/kern.log where applicable.
+                if command -v dmesg >/dev/null 2>&1 && dmesg --help 2>&1 | grep -q -- '--follow'; then
+                    dmesg --follow | grep --line-buffered "$mod" || true
+                else
+                    # Best-effort fallback: continuous dmesg polling (non-ideal).
+                    while true; do
+                        dmesg | tail -n 200 | grep --line-buffered "$mod" || true
+                        sleep 1
+                    done
+                fi
+            fi
+            ;;
+        *)
+            ;;
+        esac
+        ;;
+    *)
+        ;;
+    esac
 }
 
 dkms-uninstall() {
