@@ -23,18 +23,34 @@ set -euo pipefail
 
 SCRIPT_NAME="$(basename "$0")"
 TIMESTAMP="$(date +%Y%m%d%H%M%S)"
-BACKUP_DIR="./.setup-backups-${TIMESTAMP}"
-mkdir -p "$BACKUP_DIR"
+# Backups are disabled in this mode.
+BACKUP_DIR=""
 
-# ANSI colors for nicer prompts and status messages.
-# Keep variables single-quoted so sequences are literal and safe for printf with %b.
-RED=$'\033[31m'
-GREEN=$'\033[32m'
-YELLOW=$'\033[33m'
-BLUE=$'\033[34m'
-BOLD=$'\033[1m'
-GREY=$'\033[90m'
-RESET=$'\033[0m'
+# Detect terminal color support via tput. If tput or a color-capable terminal is not available,
+# fall back to empty strings so output is plain (no escape sequences).
+RED=''
+GREEN=''
+YELLOW=''
+BLUE=''
+BOLD=''
+GREY=''
+RESET=''
+
+if command -v tput >/dev/null 2>&1 && [ -t 1 ]; then
+    # query terminal color support; tput may fail in some environments
+    ncolors="$(tput colors 2>/dev/null || echo 0)"
+    if [ -n "$ncolors" ] && [ "$ncolors" -ge 8 ]; then
+        # Use tput so we respect the terminal capabilities
+        RED="$(tput setaf 1 2>/dev/null || printf '')"
+        GREEN="$(tput setaf 2 2>/dev/null || printf '')"
+        YELLOW="$(tput setaf 3 2>/dev/null || printf '')"
+        BLUE="$(tput setaf 4 2>/dev/null || printf '')"
+        BOLD="$(tput bold 2>/dev/null || printf '')"
+        # Some terminals don't have a dedicated grey; try setaf 8, otherwise leave empty
+        GREY="$(tput setaf 8 2>/dev/null || printf '')"
+        RESET="$(tput sgr0 2>/dev/null || printf '')"
+    fi
+fi
 
 die() {
     # Highlight errors in bold red for visibility.
@@ -58,18 +74,20 @@ prompt() {
     if [ -n "$default" ]; then
         # Show default in a muted grey so it is visible but not noisy.
         if [ -n "$read_src" ]; then
-            # Print prompt with default to the tty, then read from tty.
-            printf '%b ' "${prompt} ${GREY}[${default}]${RESET}" >"$read_src"
-            read -r out <"$read_src"
+            # Print prompt with default to the controlling TTY, then read from it.
+            # Use "$tty" (which is /dev/tty) explicitly to ensure the prompt appears on the user's terminal.
+            printf '%b ' "${prompt} ${GREY}[${default}]${RESET}" >"$tty"
+            read -r out <"$tty"
         else
+            # No controlling tty available: print to stdout and read from stdin.
             printf '%b ' "${prompt} ${GREY}[${default}]${RESET}"
             read -r out
         fi
         out="${out:-$default}"
     else
         if [ -n "$read_src" ]; then
-            printf '%b ' "${prompt}" >"$read_src"
-            read -r out <"$read_src"
+            printf '%b ' "${prompt}" >"$tty"
+            read -r out <"$tty"
         else
             printf '%b ' "${prompt}"
             read -r out
@@ -111,11 +129,8 @@ confirm() {
 }
 
 backup_file() {
-    local f="$1"
-    if [ -e "$f" ]; then
-        mkdir -p "$BACKUP_DIR/$(dirname "$f")"
-        cp -a "$f" "$BACKUP_DIR/$f" || die "failed to backup $f"
-    fi
+    # Backups disabled: no-op
+    return 0
 }
 
 replace_in_file() {
@@ -214,10 +229,10 @@ if [ ! -f "dkms.conf" ] || [ ! -f "hello.c" ]; then
     if git clone --depth=1 https://github.com/LIghtJUNction/hello_dkms.git "$tmpdir"; then
         echo "Switching to $tmpdir"
         cd "$tmpdir" || die "failed to cd to $tmpdir"
-        BACKUP_DIR="./.setup-backups-${TIMESTAMP}"
-        mkdir -p "$BACKUP_DIR"
+        # Backups disabled; no backup directory will be created.
+        BACKUP_DIR=""
         echo "Now operating in: $(pwd)"
-        echo "Backups will be created under: $BACKUP_DIR"
+        echo "Backups are disabled."
     else
         die "git clone failed; aborting"
     fi
@@ -267,7 +282,7 @@ if [ -f "dkms.conf" ]; then
 else
     die "dkms.conf not found in current directory"
 fi
-echo "dkms.conf updated and backed up to $BACKUP_DIR/dkms.conf (original)."
+echo "dkms.conf updated."
 
 # --- Update hello.c author and alias/description if present ---
 echo "Updating hello.c author and alias..."
@@ -336,7 +351,8 @@ fi
 echo "Updating textual occurrences of old package/version in README(s) and docs..."
 # Only attempt if readme_file existed before; otherwise skip
 if [ -n "$readme_file" ]; then
-    perl -0777 -pe "s/\Q${current_pkg}\E/${pkg}/g; s/\Q${current_ver}\E/${ver}/g" "$BACKUP_DIR/$readme_file" 2>/dev/null || true
+    # backups disabled; skipping attempt to update backup README content
+    :
     # Also attempt to update current README.md (if it contains the old values)
     if [ -f "README.md" ]; then
         # skip (we already created minimal README)
@@ -349,10 +365,9 @@ if [ -d ".git" ]; then
     echo ".git directory detected."
     if confirm "Do you want to REMOVE the .git directory (this is irreversible)?"; then
         # backup .git as a tarball in backups dir before removing
-        echo "Backing up .git to $BACKUP_DIR/git-backup.tar.gz"
-        tar -czf "$BACKUP_DIR/git-backup.tar.gz" .git || echo "warning: failed to archive .git"
+        # Backups disabled; remove .git without creating an archive
         rm -rf .git || die "failed to remove .git"
-        echo ".git removed (backup stored in $BACKUP_DIR/git-backup.tar.gz)"
+        echo ".git removed."
     else
         echo "Skipping .git removal."
     fi
@@ -382,7 +397,7 @@ if confirm "Would you like to rename the project directory to ${pkg}-${ver}? (Th
 fi
 
 echo
-echo "All operations complete. Backups of modified files are stored under: $BACKUP_DIR"
+echo "All operations complete."
 echo "Next steps:"
 echo "  - Inspect changes, run 'make' or use helper scripts (source ./scripts/dkms-helper.bash) to build and install."
 echo "  - If you removed .git and want to reinitialize a repo, run 'git init' and create an initial commit."
