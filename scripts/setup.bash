@@ -100,21 +100,22 @@ printf '  %bMODULE_AUTHOR%b: %s\n' "$BOLD" "$RESET" "${current_author:-<none>}"
 [ -n "$current_email" ] && printf '  %bMODULE_AUTHOR email%b: %s\n' "$BOLD" "$RESET" "$current_email"
 printf '\n'
 
-if [ ! -f "dkms.conf" ] || [ ! -f "hello.c" ]; then
-    printf '%bWarning:%b project files missing in current directory; cloning template...\n' "$YELLOW" "$RESET"
-    tmpdir="$(mktemp -d -t hello-dkms-XXXX)"
-    git clone --depth=1 https://github.com/LIghtJUNction/hello_dkms.git "$tmpdir" || die "git clone failed"
-    cd "$tmpdir" || die "failed to cd to tmpdir"
-    NEED_SYNC_BACK=1
-    printf 'Working in temporary directory: %s\n\n' "$tmpdir"
+# Always work from a fresh clone in a temporary directory. Do not attempt to use files
+# from the current working directory — clone, modify, then move the entire temp dir into place.
+tmpdir="$(mktemp -d -t hello-dkms-XXXX)"
+printf '%bCloning template into temporary directory:%b %s\n' "$YELLOW" "$RESET" "$tmpdir"
+git clone --depth=1 https://github.com/LIghtJUNction/hello_dkms.git "$tmpdir" || die "git clone failed"
+cd "$tmpdir" || die "failed to cd to tmpdir"
+NEED_SYNC_BACK=1
+printf 'Working in temporary directory: %s\n\n' "$tmpdir"
 
-    current_pkg="$(sed -n 's/^PACKAGE_NAME="\([^"]*\)".*/\1/p' dkms.conf 2>/dev/null || true)"
-    current_ver="$(sed -n 's/^PACKAGE_VERSION="\([^"]*\)".*/\1/p' dkms.conf 2>/dev/null || true)"
-    [[ "$current_pkg" =~ ^(hello-dkms|your-module|)$ ]] && current_pkg=""
-    [[ "$current_ver" =~ ^(1\.0|0\.1|)$ ]] && current_ver=""
-fi
+# Read defaults from the cloned template so prompts still have sensible defaults.
+current_pkg="$(sed -n 's/^PACKAGE_NAME="\([^"]*\)".*/\1/p' dkms.conf 2>/dev/null || true)"
+current_ver="$(sed -n 's/^PACKAGE_VERSION="\([^"]*\)".*/\1/p' dkms.conf 2>/dev/null || true)"
+[[ "$current_pkg" =~ ^(hello-dkms|your-module|)$ ]] && current_pkg=""
+[[ "$current_ver" =~ ^(1\.0|0\.1|)$ ]] && current_ver=""
 
-printf '%bEnter new values%b (leave blank to keep current):\n' "$BOLD" "$RESET"
+printf '\n%bEnter new values%b (leave blank to keep current):\n' "$BOLD" "$RESET"
 
 pkg="$(prompt 'LKM package name (e.g. hello-dkms)' "$current_pkg")"
 ver="$(prompt 'LKM package version (e.g. 1.1)' "$current_ver")"
@@ -127,6 +128,13 @@ else
     built_module_default="hello"
 fi
 built_module="$(prompt 'Built module name (.ko name)' "$built_module_default")"
+
+# If the user left PACKAGE_NAME empty, use the built module name as a safe fallback.
+# This ensures we always have a target directory name for the final move.
+if [ -z "${pkg:-}" ]; then
+    pkg="$built_module"
+    printf '%bNo package name provided. Using built module name as package: %s%b\n' "$YELLOW" "$pkg" "$RESET"
+fi
 
 printf '\n%bSummary of changes to be applied:%b\n' "$BOLD" "$RESET"
 printf '  PACKAGE_NAME: %b%s%b -> %b%s%b\n' "$GREY" "$current_pkg" "$RESET" "$GREEN" "$pkg" "$RESET"
@@ -185,11 +193,27 @@ if confirm "Update MODULE_DESCRIPTION and MODULE_ALIAS in hello.c?"; then
 fi
 
 if [ "$NEED_SYNC_BACK" -eq 1 ]; then
+    # Ensure package name is not empty (should have been set above) and prepare target.
+    if [ -z "${pkg:-}" ]; then
+        die "package name is empty; cannot determine target directory"
+    fi
+
     target_dir="$ORIG_DIR/$pkg"
-    printf '\n%bCreating output directory:%b %s\n' "$BLUE" "$RESET" "$target_dir"
-    mkdir -p "$target_dir"
-    rsync -a --delete "$PWD"/ "$target_dir"/ || die "failed to sync project to output directory"
-    printf '%bSync complete.%b\n' "$GREEN" "$RESET"
+    printf '\n%bPreparing to move temporary project into:%b %s\n' "$BLUE" "$RESET" "$target_dir"
+
+    # If the target exists, require explicit confirmation to overwrite it.
+    if [ -d "$target_dir" ]; then
+        if ! confirm "Target directory $target_dir exists. Overwrite?"; then
+            die "Aborted to avoid overwriting existing directory"
+        fi
+        printf 'Removing existing target directory: %s\n' "$target_dir"
+        rm -rf "$target_dir" || die "failed to remove existing target directory"
+    fi
+
+    # Move the entire temporary directory into place without leaving /tmp artifacts.
+    cd "$ORIG_DIR" || die "failed to cd to original directory"
+    mv "$tmpdir" "$target_dir" || die "failed to move project to output directory"
+    printf '%bMove complete.%b\n' "$GREEN" "$RESET"
     printf 'Generated project is in: %s\n' "$target_dir"
 else
     printf 'Generated project stays in current directory: %s\n' "$ORIG_DIR"
