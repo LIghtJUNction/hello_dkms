@@ -215,7 +215,7 @@ if [ -f "hello.c" ]; then
         s/\bmodprobe\s+hello\b/modprobe $ENV{PERL_MOD}/g;
 
         # 6) Replace inline descriptive mentions like "module name is 'hello'"
-        s/module name is ['"]hello['"]/module name is '\''$ENV{PERL_MOD}'\''/g;
+        s/module name is ['"]hello['"]/module name is "$ENV{PERL_MOD}"/g;
 
         # 7) If README contains references to alias 'hello_world', do not change alias text automatically.
       ' README.md || die "failed to update README.md"
