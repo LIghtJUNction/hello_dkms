@@ -16,7 +16,7 @@ DKMS requires the source to be in `/usr/src/<name>-<version>`.
 ```bash
 # paru -S direnv 
 # Clone the repo and move to the standard location
-git clone https://github.com/lightjunction/hello-dkms.git
+git clone https://github.com/LIghtJUNction/hello_dkms.git
 
 ```
 
