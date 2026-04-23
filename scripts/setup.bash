@@ -154,6 +154,31 @@ printf '  MODULE_AUTHOR: %s\n' "${current_author:-<none>}"
 [ -n "$current_email" ] && printf '  MODULE_AUTHOR email: %s\n' "$current_email"
 
 echo
+# If key project files are missing, offer to clone the repository into a temporary directory
+# and continue there. This makes the script safe to run as an online script (curl | bash).
+if [ ! -f "dkms.conf" ] || [ ! -f "hello.c" ]; then
+    echo "Warning: one or more project files (dkms.conf, hello.c) are missing in the current directory."
+    if confirm "Would you like to git-clone the repository into a temporary directory and continue there?"; then
+        tmpdir="$(mktemp -d -t hello-dkms-XXXX)"
+        echo "Cloning repository into $tmpdir..."
+        # Attempt a shallow clone of the canonical repository for this script.
+        # If you maintain a different canonical upstream, update the URL below.
+        if git clone --depth=1 https://github.com/LIghtJUNction/hello_dkms.git "$tmpdir"; then
+            echo "Switching to $tmpdir"
+            cd "$tmpdir" || die "failed to cd to $tmpdir"
+            # Recompute / reaffirm backup dir path (keeps original timestamp but is relative to new cwd)
+            BACKUP_DIR="./.setup-backups-${TIMESTAMP}"
+            mkdir -p "$BACKUP_DIR"
+            echo "Now operating in: $(pwd)"
+            echo "Backups will be created under: $BACKUP_DIR"
+        else
+            die "git clone failed; aborting"
+        fi
+    else
+        echo "Continuing in current directory; operations may fail if required files are missing."
+    fi
+fi
+
 printf 'Enter new values (leave blank to keep current):\n'
 pkg="$(prompt 'LKM package name (e.g. hello-dkms)' "$current_pkg")"
 ver="$(prompt 'LKM package version (e.g. 1.1)' "$current_ver")"
