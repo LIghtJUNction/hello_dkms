@@ -109,6 +109,8 @@ dkms-install() {
         return 1
     }
     printf 'Install complete.\n'
+    printf 'Module %s v%s is now installed.\n' "$pkg" "$ver"
+    printf 'Run sudo modprobe %s to load the module.\n' "$mod"
 }
 
 dkms-update() {
@@ -175,6 +177,7 @@ dkms-update() {
     modinfo "$mod" || true
 
     printf '\nFinished.\n'
+    printf 'Run sudo modprobe %s to load the module.\n' "$mod"
 }
 
 dkms-uninstall() {
