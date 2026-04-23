@@ -43,20 +43,8 @@ sudo dkms add -m hello-dkms -v $VER
 sudo dkms build -m hello-dkms -v $VER
 sudo dkms install -m hello-dkms -v $VER
 ```
-
-Important (read this first)
-- Do NOT use `gcc` to compile kernel modules; use `clang`. Many modern kernels are built with Clang, and compiling modules with GCC can fail due to Clang-specific compiler flags (for example: `-mstack-alignment`, `-mretpoline-external-thunk`, `-fexperimental-late-parse-attributes`, `-fsplit-lto-unit`, etc.). When building you can select the compiler via an environment variable, for example:
-```bash
-# Use clang for the current shell session
-export KBUILD_CC=clang
-# Or for a single command
-KBUILD_CC=clang make
-```
-The helper scripts try to detect the kernel's preferred compiler and will pass an appropriate `KBUILD_CC` to DKMS where possible, but when running `make` or other tools directly you should explicitly use `clang`.
-
 - See the project's `.envrc` for recommended environment variables (we recommend using `direnv`). You can also use dotenv or similar tools to load environment variables. Example entries to add to `.envrc`:
 ```bash
-export KBUILD_CC=clang
 export DKMS_SOURCE_STRATEGY=link
 # Or set DKMS_FORCE=0 to disable the default --force behavior
 export DKMS_FORCE=1

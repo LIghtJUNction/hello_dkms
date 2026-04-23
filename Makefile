@@ -5,11 +5,16 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
+export LLVM=1
+export CC=clang
+
 # External Makefile for hello-dkms
 KDIR ?= /lib/modules/$(shell uname -r)/build
 
+.PHONY: all clean compdb format check-format
+
 # Generate version.h from dkms.conf so MODULE_VERSION is sourced from a single place.
-PKG_VER := $(shell sed -n 's/^PACKAGE_VERSION="\([^"]*\)".*/\1/p' dkms.conf)
+PKG_VER := $(shell sed -n 's/^PACKAGE_VERSION="\\([^"]*\\)".*/\\1/p' dkms.conf)
 VERSION_H := $(PWD)/version.h
 
 all: $(VERSION_H)
@@ -21,3 +26,16 @@ $(VERSION_H):
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
 	-rm -f $(VERSION_H)
+
+compdb:
+	bear -- make
+
+format:
+	find . -name '*.c' -o -name '*.h' | xargs clang-format -i
+
+check-format:
+	@echo "check format..."
+	@find . -name '*.c' -o -name '*.h' -exec clang-format -output-replacements-xml {} \; | \
+		grep -q "<replacement " && \
+		(echo "format error, please run make format"; exit 1) || \
+		echo "format OK"
