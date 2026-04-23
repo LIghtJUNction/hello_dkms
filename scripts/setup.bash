@@ -6,11 +6,7 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-# Interactive setup script for hello-dkms project
 set -euo pipefail
-
-SCRIPT_NAME="$(basename "$0")"
-TIMESTAMP="$(date +%Y%m%d%H%M%S)"
 
 # ── Colors ──────────────────────────────────────────────────────────────
 if [ -t 2 ] || [ -r /dev/tty ]; then
@@ -71,12 +67,10 @@ confirm() {
     esac
 }
 
-# ── Save original working directory ─────────────────────────────────────
 ORIG_DIR="$(pwd)"
 WORK_DIR="$ORIG_DIR"
-CLONED_FROM_TMP=0
+NEED_SYNC_BACK=0
 
-# ── Read current values from current dir ────────────────────────────────
 current_pkg=""
 current_ver=""
 current_author=""
@@ -108,16 +102,14 @@ printf '  %bMODULE_AUTHOR%b: %s\n' "$BOLD" "$RESET" "${current_author:-<none>}"
 [ -n "$current_email" ] && printf '  %bMODULE_AUTHOR email%b: %s\n' "$BOLD" "$RESET" "$current_email"
 printf '\n'
 
-# ── If project files are missing, clone to tmp and work there ───────────
 if [ ! -f "dkms.conf" ] || [ ! -f "hello.c" ]; then
-    printf '%bWarning:%b project files (dkms.conf, hello.c) are missing in current directory.\n' "$YELLOW" "$RESET"
+    printf '%bWarning:%b project files missing in current directory; cloning template...\n' "$YELLOW" "$RESET"
     tmpdir="$(mktemp -d -t hello-dkms-XXXX)"
-    printf 'Cloning repository into %s...\n' "$tmpdir"
-    git clone --depth=1 https://github.com/LIghtJUNction/hello_dkms.git "$tmpdir" || die "git clone failed; aborting"
-    cd "$tmpdir" || die "failed to cd to $tmpdir"
+    git clone --depth=1 https://github.com/LIghtJUNction/hello_dkms.git "$tmpdir" || die "git clone failed"
+    cd "$tmpdir" || die "failed to cd to tmpdir"
     WORK_DIR="$tmpdir"
-    CLONED_FROM_TMP=1
-    printf 'Now operating in: %s\n\n' "$(pwd)"
+    NEED_SYNC_BACK=1
+    printf 'Working in temporary directory: %s\n\n' "$WORK_DIR"
 
     current_pkg="$(sed -n 's/^PACKAGE_NAME="\([^"]*\)".*/\1/p' dkms.conf 2>/dev/null || true)"
     current_ver="$(sed -n 's/^PACKAGE_VERSION="\([^"]*\)".*/\1/p' dkms.conf 2>/dev/null || true)"
@@ -151,7 +143,6 @@ if ! confirm "Proceed with the above changes?"; then
     exit 0
 fi
 
-# ── Update dkms.conf ─────────────────────────────────────────────────────
 PERL_PKG="$pkg" PERL_VER="$ver" PERL_MOD="$built_module" \
     perl -0777 -i -pe '
   s/^(PACKAGE_NAME=")[^"]*(")/$1 . $ENV{PERL_PKG} . $2/gem;
@@ -163,7 +154,6 @@ PERL_PKG="$pkg" PERL_VER="$ver" PERL_MOD="$built_module" \
   }
 ' dkms.conf || die "failed to update dkms.conf"
 
-# ── Update hello.c ───────────────────────────────────────────────────────
 if [ -f "hello.c" ]; then
     author_entry="$author_name"
     [ -n "$author_email" ] && author_entry="$author_entry <$author_email>"
@@ -197,17 +187,14 @@ if confirm "Update MODULE_DESCRIPTION and MODULE_ALIAS in hello.c?"; then
   ' hello.c || die "failed to update description/alias"
 fi
 
-# ── If we cloned to tmp, sync files back to original cwd ─────────────────
-if [ "$CLONED_FROM_TMP" -eq 1 ]; then
-    printf '\n%bSyncing modified files back to original directory...%b\n' "$BLUE" "$RESET"
-    cp -f "$WORK_DIR/dkms.conf" "$ORIG_DIR/dkms.conf"
-    cp -f "$WORK_DIR/hello.c" "$ORIG_DIR/hello.c"
-    [ -f "$WORK_DIR/README.md" ] && [ ! -f "$ORIG_DIR/README.md" ] && cp -f "$WORK_DIR/README.md" "$ORIG_DIR/README.md" || true
-    printf '%bDone.%b\n' "$GREEN" "$RESET"
+if [ "$NEED_SYNC_BACK" -eq 1 ]; then
+    printf '\n%bSyncing generated project back to original directory...%b\n' "$BLUE" "$RESET"
+    rsync -a --delete "$WORK_DIR"/ "$ORIG_DIR"/ || die "failed to sync project back to original directory"
+    printf '%bSync complete.%b\n' "$GREEN" "$RESET"
 fi
 
 printf '\n%bAll operations complete.%b\n' "$GREEN" "$RESET"
 printf 'Next steps:\n'
-printf '  - Inspect changes in %s\n' "$ORIG_DIR"
+printf '  - Files are now in: %s\n' "$ORIG_DIR"
 printf '  - Run make or your DKMS helper scripts.\n'
 printf '\n'
