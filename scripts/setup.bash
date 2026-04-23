@@ -26,12 +26,24 @@ TIMESTAMP="$(date +%Y%m%d%H%M%S)"
 BACKUP_DIR="./.setup-backups-${TIMESTAMP}"
 mkdir -p "$BACKUP_DIR"
 
+# ANSI colors for nicer prompts and status messages.
+# Keep variables single-quoted so sequences are literal and safe for printf with %b.
+RED=$'\033[31m'
+GREEN=$'\033[32m'
+YELLOW=$'\033[33m'
+BLUE=$'\033[34m'
+BOLD=$'\033[1m'
+GREY=$'\033[90m'
+RESET=$'\033[0m'
+
 die() {
-    printf 'ERROR: %s\n' "$1" >&2
+    # Highlight errors in bold red for visibility.
+    printf '%b\n' "${BOLD}${RED}ERROR:${RESET} $1" >&2
     exit 1
 }
 
 prompt() {
+    # prompt: prompt text, default: default value (displayed in grey)
     local prompt="$1"
     local default="$2"
     local out
@@ -44,37 +56,57 @@ prompt() {
     fi
 
     if [ -n "$default" ]; then
+        # Show default in a muted grey so it is visible but not noisy.
         if [ -n "$read_src" ]; then
-            read -r -p "$prompt [$default]: " out <"$read_src"
+            # Print prompt with default to the tty, then read from tty.
+            printf '%b ' "${prompt} ${GREY}[${default}]${RESET}" >"$read_src"
+            read -r out <"$read_src"
         else
-            read -r -p "$prompt [$default]: " out
+            printf '%b ' "${prompt} ${GREY}[${default}]${RESET}"
+            read -r out
         fi
         out="${out:-$default}"
     else
         if [ -n "$read_src" ]; then
-            read -r -p "$prompt: " out <"$read_src"
+            printf '%b ' "${prompt}" >"$read_src"
+            read -r out <"$read_src"
         else
-            read -r -p "$prompt: " out
+            printf '%b ' "${prompt}"
+            read -r out
         fi
     fi
     printf '%s' "$out"
 }
 
 confirm() {
-    # prompt, default No
+    # prompt, default No. Green for 'y', red for 'N'
     local msg="$1"
     local default_no="${2:-no}"
     local resp
-    # Prefer the controlling TTY for confirmation prompts when available.
     local tty="/dev/tty"
+    # Construct colored inline indicator: green y, red N
+    local prompt_str="${msg} [${GREEN}y${RESET}/${RED}N${RESET}]: "
     if [ -r "$tty" ]; then
-        read -r -p "$msg [y/N]: " resp <"$tty"
+        # Print to tty and read from it to avoid interfering with piped stdin
+        printf '%b' "$prompt_str" >"$tty"
+        read -r resp <"$tty"
     else
-        read -r -p "$msg [y/N]: " resp
+        printf '%b' "$prompt_str"
+        read -r resp
     fi
     case "$resp" in
-    [yY] | [yY][eE][sS]) return 0 ;;
-    *) return 1 ;;
+    [yY] | [yY][eE][sS])
+        printf '%b\n' "${GREEN}yes${RESET}" >&2
+        return 0
+        ;;
+    [nN] | [nN][oO] | '')
+        printf '%b\n' "${RED}no${RESET}" >&2
+        return 1
+        ;;
+    *)
+        printf '%b\n' "${YELLOW}invalid response${RESET}" >&2
+        return 1
+        ;;
     esac
 }
 
@@ -156,11 +188,21 @@ if [[ "$current_author" =~ \<([^>]+)\> ]]; then
     current_author="$(echo "$current_author" | sed 's/ *<.*>//')"
 fi
 
+# Print detected current values. If absent, try git config for sensible defaults.
 printf 'Current values detected:\n'
-printf '  PACKAGE_NAME: %s\n' "${current_pkg:-<none>}"
-printf '  PACKAGE_VERSION: %s\n' "${current_ver:-<none>}"
-printf '  MODULE_AUTHOR: %s\n' "${current_author:-<none>}"
-[ -n "$current_email" ] && printf '  MODULE_AUTHOR email: %s\n' "$current_email"
+# prefer local file values; fall back to global git config for author info if available
+git_name="$(git config --global user.name 2>/dev/null || true)"
+git_email="$(git config --global user.email 2>/dev/null || true)"
+if [ -z "$current_author" ] && [ -n "$git_name" ]; then
+    current_author="$git_name"
+fi
+if [ -z "$current_email" ] && [ -n "$git_email" ]; then
+    current_email="$git_email"
+fi
+printf '  %b: %s\n' "${BOLD}PACKAGE_NAME${RESET}" "${current_pkg:-<none>}"
+printf '  %b: %s\n' "${BOLD}PACKAGE_VERSION${RESET}" "${current_ver:-<none>}"
+printf '  %b: %s\n' "${BOLD}MODULE_AUTHOR${RESET}" "${current_author:-<none>}"
+[ -n "$current_email" ] && printf '  %b: %s\n' "${BOLD}MODULE_AUTHOR email${RESET}" "$current_email"
 
 echo
 # If key project files are missing, clone the repository into a temporary directory and continue there.
@@ -250,8 +292,11 @@ fi
 if confirm "Would you like to update MODULE_DESCRIPTION and MODULE_ALIAS in hello.c now?"; then
     current_desc="$(sed -n -E 's/^MODULE_DESCRIPTION\(\"(.*)\"\);.*/\1/p' hello.c || true)"
     current_alias="$(sed -n -E 's/^MODULE_ALIAS\(\"(.*)\"\);.*/\1/p' hello.c || true)"
-    new_desc="$(prompt 'Module description' "${current_desc:-Standard Hello World DKMS module}")"
-    new_alias="$(prompt 'Module alias' "${current_alias:-${built_module}}")"
+    # Construct smarter defaults based on prior inputs: prefer existing values, otherwise use package/module info.
+    default_desc="${current_desc:-${pkg} DKMS module}"
+    default_alias="${current_alias:-${built_module}}"
+    new_desc="$(prompt 'Module description' "$default_desc")"
+    new_alias="$(prompt 'Module alias' "$default_alias")"
     backup_file "hello.c" # additional backup
     perl -0777 -pe "
     if (s/MODULE_DESCRIPTION\([^;]*\);/MODULE_DESCRIPTION(\"${new_desc}\");/m) { } else { s/(MODULE_AUTHOR\(\".*\"\);)/\1\nMODULE_DESCRIPTION(\"${new_desc}\");/m }
