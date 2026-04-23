@@ -1,56 +1,114 @@
 #!/usr/bin/env bash
-# dkms helpers for this repo - safe function names to avoid clashing with system commands.
-# Usage: source ./scripts/dkms-helpers.sh
-set -eu
+# Safe DKMS helper functions — avoid set -e at top-level so sourcing cannot abort the shell.
+# Usage: source ./scripts/dkms-helpers-fixed.sh
 
-# Parse values from dkms.conf in current directory
-_get_pkg()  { sed -n 's/^PACKAGE_NAME="\([^"]*\)".*/\1/p' dkms.conf; }
-_get_ver()  { sed -n 's/^PACKAGE_VERSION="\([^"]*\)".*/\1/p' dkms.conf; }
-_get_mod()  { sed -n 's/^BUILT_MODULE_NAME\[[0-9]*\]="\([^"]*\)".*/\1/p' dkms.conf || true; }
+# Helper: ensure we are in project dir with dkms.conf
+_check_dkms_conf() {
+    if [ ! -f "dkms.conf" ]; then
+        printf 'ERROR: dkms.conf not found in current directory (%s)\n' "$(pwd)" >&2
+        return 1
+    fi
+    return 0
+}
+
+# Parse values from dkms.conf (returns via stdout)
+_get_pkg() {
+    _check_dkms_conf || return 1
+    sed -n 's/^PACKAGE_NAME="\([^"]*\)".*/\1/p' dkms.conf
+}
+_get_ver() {
+    _check_dkms_conf || return 1
+    sed -n 's/^PACKAGE_VERSION="\([^"]*\)".*/\1/p' dkms.conf
+}
+_get_mod() {
+    _check_dkms_conf || return 1
+    sed -n 's/^BUILT_MODULE_NAME\[[0-9]*\]="\([^"]*\)".*/\1/p' dkms.conf || true
+}
 _get_mod_or_fallback() {
-  local m
-  m="$(_get_mod)"
-  if [ -z "$m" ]; then
-    local p
-    p="$(_get_pkg)"
-    printf '%s' "${p%-dkms}"
-  else
-    printf '%s' "$m"
-  fi
+    local m pkg
+    m="$(_get_mod)" || true
+    if [ -z "$m" ]; then
+        pkg="$(_get_pkg)" || return 1
+        printf '%s' "${pkg%-dkms}"
+    else
+        printf '%s' "$m"
+    fi
 }
 
 dkms-install() {
-  local pkg ver mod
-  pkg="$(_get_pkg)"
-  ver="$(_get_ver)"
-  mod="$(_get_mod_or_fallback)"
-  echo "Installing $pkg v$ver (module: $mod)..."
-  sudo rsync -a --delete ./ "/usr/src/${pkg}-${ver}/" \
-    && sudo dkms add -m "$pkg" -v "$ver" \
-    && sudo dkms build -m "$pkg" -v "$ver" \
-    && sudo dkms install -m "$pkg" -v "$ver" \
-    && sudo depmod -a
+    # Install: sync to /usr/src/<pkg>-<ver>, add, build, install, depmod
+    _check_dkms_conf || return 1
+    local pkg ver mod
+    pkg="$(_get_pkg)" || return 1
+    ver="$(_get_ver)" || return 1
+    mod="$(_get_mod_or_fallback)" || return 1
+
+    printf 'Installing %s v%s (module: %s)\n' "$pkg" "$ver" "$mod"
+    # sync (fail early with message if rsync not present)
+    if ! command -v rsync >/dev/null 2>&1; then
+        printf 'ERROR: rsync not found. Please install rsync.\n' >&2
+        return 1
+    fi
+
+    sudo rsync -a --delete ./ "/usr/src/${pkg}-${ver}/" || {
+        printf 'rsync failed\n' >&2
+        return 1
+    }
+    sudo dkms add -m "$pkg" -v "$ver" || {
+        printf 'dkms add failed\n' >&2
+        return 1
+    }
+    sudo dkms build -m "$pkg" -v "$ver" || {
+        printf 'dkms build failed\n' >&2
+        return 1
+    }
+    sudo dkms install -m "$pkg" -v "$ver" || {
+        printf 'dkms install failed\n' >&2
+        return 1
+    }
+    sudo depmod -a || {
+        printf 'depmod failed\n' >&2
+        return 1
+    }
+    printf 'Install complete.\n'
 }
 
 dkms-update() {
-  local pkg ver
-  pkg="$(_get_pkg)"
-  ver="$(_get_ver)"
-  echo "Rebuilding/installing $pkg v$ver..."
-  sudo dkms build -m "$pkg" -v "$ver" \
-    && sudo dkms install -m "$pkg" -v "$ver" \
-    && sudo depmod -a
+    _check_dkms_conf || return 1
+    local pkg ver
+    pkg="$(_get_pkg)" || return 1
+    ver="$(_get_ver)" || return 1
+    printf 'Rebuilding/installing %s v%s\n' "$pkg" "$ver"
+
+    sudo dkms build -m "$pkg" -v "$ver" || {
+        printf 'dkms build failed\n' >&2
+        return 1
+    }
+    sudo dkms install -m "$pkg" -v "$ver" || {
+        printf 'dkms install failed\n' >&2
+        return 1
+    }
+    sudo depmod -a || {
+        printf 'depmod failed\n' >&2
+        return 1
+    }
+    printf 'Update complete.\n'
 }
 
 dkms-uninstall() {
-  local pkg ver
-  pkg="$(_get_pkg)"
-  ver="$(_get_ver)"
-  echo "Removing $pkg v$ver from DKMS..."
-  sudo dkms remove -m "$pkg" -v "$ver" --all
+    _check_dkms_conf || return 1
+    local pkg ver
+    pkg="$(_get_pkg)" || return 1
+    ver="$(_get_ver)" || return 1
+    printf 'Removing %s v%s from DKMS\n' "$pkg" "$ver"
+    sudo dkms remove -m "$pkg" -v "$ver" --all || {
+        printf 'dkms remove failed\n' >&2
+        return 1
+    }
+    printf 'Uninstall complete.\n'
 }
 
-# Convenience short names (optional)
+# Short aliases (optional)
 dki() { dkms-install "$@"; }
 dku() { dkms-update "$@"; }
 dkrm() { dkms-uninstall "$@"; }
