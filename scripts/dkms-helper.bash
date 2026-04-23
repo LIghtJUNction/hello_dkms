@@ -42,25 +42,56 @@ _get_mod_or_fallback() {
     fi
 }
 
-dkms-install() {
-    # Install: sync to /usr/src/<pkg>-<ver>, add, build, install, depmod
+# Create a symlink in /usr/src/<pkg>-<ver> pointing to the current working tree.
+# This avoids copying files for development workflows.
+dkms-link() {
     _check_dkms_conf || return 1
-    local pkg ver mod
+    local pkg ver src target
+    pkg="$(_get_pkg)" || return 1
+    ver="$(_get_ver)" || return 1
+    src="$(pwd)"
+    target="/usr/src/${pkg}-${ver}"
+    printf 'Creating/refreshing symlink %s -> %s\n' "$target" "$src"
+    sudo mkdir -p /usr/src
+    if ! sudo ln -sfn "$src" "$target"; then
+        printf 'ln failed\n' >&2
+        return 1
+    fi
+    printf 'Symlink ready: %s -> %s\n' "$target" "$src"
+}
+
+dkms-install() {
+    # Install: either create a symlink in /usr/src/<pkg>-<ver> (default),
+    # or rsync the current tree into that location depending on
+    # DKMS_SOURCE_STRATEGY environment variable.
+    _check_dkms_conf || return 1
+    local pkg ver mod strategy
     pkg="$(_get_pkg)" || return 1
     ver="$(_get_ver)" || return 1
     mod="$(_get_mod_or_fallback)" || return 1
 
-    printf 'Installing %s v%s (module: %s)\n' "$pkg" "$ver" "$mod"
-    # sync (fail early with message if rsync not present)
-    if ! command -v rsync >/dev/null 2>&1; then
-        printf 'ERROR: rsync not found. Please install rsync.\n' >&2
-        return 1
+    strategy="${DKMS_SOURCE_STRATEGY:-link}"
+    printf 'Installing %s v%s (module: %s) using strategy: %s\n' "$pkg" "$ver" "$mod" "$strategy"
+
+    if [ "$strategy" = "link" ]; then
+        # create or refresh symlink
+        if ! dkms-link; then
+            printf 'ERROR: dkms-link failed\n' >&2
+            return 1
+        fi
+    else
+        # fallback to rsync strategy
+        if ! command -v rsync >/dev/null 2>&1; then
+            printf 'ERROR: rsync not found. Please install rsync or set DKMS_SOURCE_STRATEGY=link\n' >&2
+            return 1
+        fi
+        printf 'Syncing current directory to /usr/src/%s-%s/ (excluding .git, .agents, build/)...\n' "$pkg" "$ver"
+        sudo rsync -a --delete --exclude='.git' --exclude='.agents' --exclude='build/' ./ "/usr/src/${pkg}-${ver}/" || {
+            printf 'rsync failed\n' >&2
+            return 1
+        }
     fi
 
-    sudo rsync -a --delete ./ "/usr/src/${pkg}-${ver}/" || {
-        printf 'rsync failed\n' >&2
-        return 1
-    }
     sudo dkms add -m "$pkg" -v "$ver" || {
         printf 'dkms add failed\n' >&2
         return 1
@@ -82,23 +113,32 @@ dkms-install() {
 
 dkms-update() {
     _check_dkms_conf || return 1
-    local pkg ver mod
+    local pkg ver mod strategy
     pkg="$(_get_pkg)" || return 1
     ver="$(_get_ver)" || return 1
     mod="$(_get_mod_or_fallback)" || return 1
-    printf 'Rebuilding/installing %s v%s (module: %s)\n' "$pkg" "$ver" "$mod"
+    strategy="${DKMS_SOURCE_STRATEGY:-link}"
+    printf 'Rebuilding/installing %s v%s (module: %s) using strategy: %s\n' "$pkg" "$ver" "$mod" "$strategy"
 
-    # Ensure rsync is available for syncing current tree into /usr/src
-    if ! command -v rsync >/dev/null 2>&1; then
-        printf 'ERROR: rsync not found. Please install rsync or run dkms-install which will sync sources.\n' >&2
-        return 1
+    if [ "$strategy" = "link" ]; then
+        # Ensure the symlink exists/points to cwd
+        if ! dkms-link; then
+            printf 'ERROR: dkms-link failed\n' >&2
+            return 1
+        fi
+    else
+        # Ensure rsync is available for syncing current tree into /usr/src
+        if ! command -v rsync >/dev/null 2>&1; then
+            printf 'ERROR: rsync not found. Please install rsync or set DKMS_SOURCE_STRATEGY=link\n' >&2
+            return 1
+        fi
+
+        printf 'Syncing current directory to /usr/src/%s-%s/ (excluding .git, .agents, build/)...\n' "$pkg" "$ver"
+        sudo rsync -a --delete --exclude='.git' --exclude='.agents' --exclude='build/' ./ "/usr/src/${pkg}-${ver}/" || {
+            printf 'rsync failed\n' >&2
+            return 1
+        }
     fi
-
-    printf 'Syncing current directory to /usr/src/%s-%s/ (excluding .git, .agents, build/)...\n' "$pkg" "$ver"
-    sudo rsync -a --delete --exclude='.git' --exclude='.agents' --exclude='build/' ./ "/usr/src/${pkg}-${ver}/" || {
-        printf 'rsync failed\n' >&2
-        return 1
-    }
 
     printf 'Starting dkms build (this may take a while)...\n'
     if ! sudo dkms build -m "$pkg" -v "$ver"; then
