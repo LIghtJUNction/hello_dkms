@@ -15,7 +15,7 @@ A minimal DKMS "Hello World" module .
 ```bash
 # Quick install (one-liner)
 # Install script hosted in the repository — review it before running.
-curl -fsSL https://github.com/LIghtJUNction/hello_dkms/scripts/setup.sh | bash
+curl -fsSL  https://raw.githubusercontent.com/LIghtJUNction/hello_dkms/main/scripts/setup.bash | bash
 ```
 
 ## 1. Setup Source Directory
