@@ -35,11 +35,27 @@ prompt() {
     local prompt="$1"
     local default="$2"
     local out
+    # Prefer reading from the controlling TTY so this script remains interactive when stdin is piped.
+    # Fall back to standard stdin if /dev/tty is not available.
+    local tty="/dev/tty"
+    local read_src=""
+    if [ -r "$tty" ]; then
+        read_src="$tty"
+    fi
+
     if [ -n "$default" ]; then
-        read -r -p "$prompt [$default]: " out
+        if [ -n "$read_src" ]; then
+            read -r -p "$prompt [$default]: " out <"$read_src"
+        else
+            read -r -p "$prompt [$default]: " out
+        fi
         out="${out:-$default}"
     else
-        read -r -p "$prompt: " out
+        if [ -n "$read_src" ]; then
+            read -r -p "$prompt: " out <"$read_src"
+        else
+            read -r -p "$prompt: " out
+        fi
     fi
     printf '%s' "$out"
 }
@@ -49,7 +65,13 @@ confirm() {
     local msg="$1"
     local default_no="${2:-no}"
     local resp
-    read -r -p "$msg [y/N]: " resp
+    # Prefer the controlling TTY for confirmation prompts when available.
+    local tty="/dev/tty"
+    if [ -r "$tty" ]; then
+        read -r -p "$msg [y/N]: " resp <"$tty"
+    else
+        read -r -p "$msg [y/N]: " resp
+    fi
     case "$resp" in
     [yY] | [yY][eE][sS]) return 0 ;;
     *) return 1 ;;
