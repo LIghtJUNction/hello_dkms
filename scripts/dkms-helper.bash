@@ -50,6 +50,26 @@ _get_mod_or_fallback() {
     fi
 }
 
+# Detect which compiler the kernel build expects and return a suitable KBUILD_CC value.
+# Heuristics:
+#  - If the kernel build .config declares CONFIG_CC_IS_CLANG=y, prefer clang.
+#  - If the kernel Makefile mentions 'clang' prefer clang.
+#  - Fall back to empty (no KBUILD_CC) if detection fails.
+_detect_kbuild_cc() {
+    local kbuild_dir="/lib/modules/$(uname -r)/build"
+    local cc=""
+
+    if [ -f "$kbuild_dir/.config" ] && grep -q '^CONFIG_CC_IS_CLANG=y' "$kbuild_dir/.config" 2>/dev/null; then
+        cc="clang"
+    elif [ -f "$kbuild_dir/Makefile" ] && grep -q 'clang' "$kbuild_dir/Makefile" 2>/dev/null; then
+        cc="clang"
+    elif [ -f /proc/version ] && grep -q 'clang' /proc/version 2>/dev/null; then
+        cc="clang"
+    fi
+
+    printf '%s' "$cc"
+}
+
 # Create a symlink in /usr/src/<pkg>-<ver> pointing to the current working tree.
 # This avoids copying files for development workflows.
 dkms-link() {
@@ -104,14 +124,30 @@ dkms-install() {
         printf 'dkms add failed\n' >&2
         return 1
     }
-    sudo dkms build -m "$pkg" -v "$ver" $DKMS_FORCE_FLAG || {
-        printf 'dkms build failed\n' >&2
-        return 1
-    }
-    sudo dkms install -m "$pkg" -v "$ver" $DKMS_FORCE_FLAG || {
-        printf 'dkms install failed\n' >&2
-        return 1
-    }
+
+    # Detect kernel build compiler and, if present, pass it to dkms via sudo env so the
+    # module is built with the correct compiler (avoids clang/gcc mismatch flags).
+    _kcc="$(_detect_kbuild_cc)" || true
+    if [ -n "$_kcc" ]; then
+        if ! sudo env KBUILD_CC="$_kcc" dkms build -m "$pkg" -v "$ver" $DKMS_FORCE_FLAG; then
+            printf 'dkms build failed\n' >&2
+            return 1
+        fi
+        if ! sudo env KBUILD_CC="$_kcc" dkms install -m "$pkg" -v "$ver" $DKMS_FORCE_FLAG; then
+            printf 'dkms install failed\n' >&2
+            return 1
+        fi
+    else
+        sudo dkms build -m "$pkg" -v "$ver" $DKMS_FORCE_FLAG || {
+            printf 'dkms build failed\n' >&2
+            return 1
+        }
+        sudo dkms install -m "$pkg" -v "$ver" $DKMS_FORCE_FLAG || {
+            printf 'dkms install failed\n' >&2
+            return 1
+        }
+    fi
+
     sudo depmod -a || {
         printf 'depmod failed\n' >&2
         return 1
@@ -151,15 +187,31 @@ dkms-update() {
     fi
 
     printf 'Starting dkms build (this may take a while)...\n'
-    if ! sudo dkms build -m "$pkg" -v "$ver" $DKMS_FORCE_FLAG; then
-        printf 'dkms build failed\n' >&2
-        return 1
+    # Detect kernel compiler and pass via sudo env when detected.
+    _kcc="$(_detect_kbuild_cc)" || true
+    if [ -n "$_kcc" ]; then
+        if ! sudo env KBUILD_CC="$_kcc" dkms build -m "$pkg" -v "$ver" $DKMS_FORCE_FLAG; then
+            printf 'dkms build failed\n' >&2
+            return 1
+        fi
+    else
+        if ! sudo dkms build -m "$pkg" -v "$ver" $DKMS_FORCE_FLAG; then
+            printf 'dkms build failed\n' >&2
+            return 1
+        fi
     fi
 
     printf 'Installing module via dkms...\n'
-    if ! sudo dkms install -m "$pkg" -v "$ver" $DKMS_FORCE_FLAG; then
-        printf 'dkms install failed\n' >&2
-        return 1
+    if [ -n "$_kcc" ]; then
+        if ! sudo env KBUILD_CC="$_kcc" dkms install -m "$pkg" -v "$ver" $DKMS_FORCE_FLAG; then
+            printf 'dkms install failed\n' >&2
+            return 1
+        fi
+    else
+        if ! sudo dkms install -m "$pkg" -v "$ver" $DKMS_FORCE_FLAG; then
+            printf 'dkms install failed\n' >&2
+            return 1
+        fi
     fi
 
     if ! sudo depmod -a; then

@@ -72,6 +72,17 @@ MODULE_VERSION(MODULE_VERSION_STRING);
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("hello_world");
 
+MODULE_SOFTDEP("");
+MODULE_WEAKDEP("");
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
+    // 6.13
+    MODULE_IMPORT_NS("VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");
+#else
+    // old
+    MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+#endif
+
 /*
  * Enumerated Kernel Macros for reference:
  * - MODULE_SOFTDEP: "pre: module_a post: module_b" (Dependency hints)

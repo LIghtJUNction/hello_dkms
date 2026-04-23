@@ -44,6 +44,35 @@ sudo dkms build -m hello-dkms -v $VER
 sudo dkms install -m hello-dkms -v $VER
 ```
 
+注意（重要）
+- 不要使用 `gcc` 编译内核模块，请使用 `clang`。内核可能由 Clang 构建，使用 GCC 可能会因为 Clang 专属的编译选项（例如 `-mstack-alignment`、`-mretpoline-external-thunk` 等）而导致编译失败。构建时可以通过设置环境变量来指定编译器，例如：
+```bash
+# 在当前 shell 会话中使用 clang
+export KBUILD_CC=clang
+# 或直接在单次命令前指定
+KBUILD_CC=clang make
+```
+脚本已包含对内核期望编译器的检测并会在需要时把合适的 `KBUILD_CC` 传递给 DKMS，但在手动运行 `make` 或使用其他工具时请显式使用 `clang`。
+
+- 环境变量请查看项目根目录的 `.envrc` 文件（推荐使用 direnv），也可以使用 dotenv 等工具加载环境变量。示例（将此加入 `.envrc`）：
+```bash
+export KBUILD_CC=clang
+export DKMS_SOURCE_STRATEGY=link
+# 或者根据偏好设置 DKMS_FORCE=0 来禁用 --force
+export DKMS_FORCE=1
+```
+如果你使用 dotenv，请先安装并按需加载 `.env` 文件以设置上述变量。
+
+- 若需要生成 `compile_commands.json`（供 clangd / 静态分析工具使用），请使用 `bear` 配合 `make`：
+```bash
+# 生成 compile_commands.json（需要先安装 bear）
+bear -- make
+```
+或者使用项目内的构建 wrapper（如果存在）：
+```bash
+./scripts/build.sh bear -- make
+```
+
 ## 4. Verify
 ```bash
 # Load module and check logs (module name is 'hello' as compiled; alias 'hello_world' also available)
