@@ -44,31 +44,31 @@ sudo dkms build -m hello-dkms -v $VER
 sudo dkms install -m hello-dkms -v $VER
 ```
 
-注意（重要）
-- 不要使用 `gcc` 编译内核模块，请使用 `clang`。内核可能由 Clang 构建，使用 GCC 可能会因为 Clang 专属的编译选项（例如 `-mstack-alignment`、`-mretpoline-external-thunk` 等）而导致编译失败。构建时可以通过设置环境变量来指定编译器，例如：
+Important (read this first)
+- Do NOT use `gcc` to compile kernel modules; use `clang`. Many modern kernels are built with Clang, and compiling modules with GCC can fail due to Clang-specific compiler flags (for example: `-mstack-alignment`, `-mretpoline-external-thunk`, `-fexperimental-late-parse-attributes`, `-fsplit-lto-unit`, etc.). When building you can select the compiler via an environment variable, for example:
 ```bash
-# 在当前 shell 会话中使用 clang
+# Use clang for the current shell session
 export KBUILD_CC=clang
-# 或直接在单次命令前指定
+# Or for a single command
 KBUILD_CC=clang make
 ```
-脚本已包含对内核期望编译器的检测并会在需要时把合适的 `KBUILD_CC` 传递给 DKMS，但在手动运行 `make` 或使用其他工具时请显式使用 `clang`。
+The helper scripts try to detect the kernel's preferred compiler and will pass an appropriate `KBUILD_CC` to DKMS where possible, but when running `make` or other tools directly you should explicitly use `clang`.
 
-- 环境变量请查看项目根目录的 `.envrc` 文件（推荐使用 direnv），也可以使用 dotenv 等工具加载环境变量。示例（将此加入 `.envrc`）：
+- See the project's `.envrc` for recommended environment variables (we recommend using `direnv`). You can also use dotenv or similar tools to load environment variables. Example entries to add to `.envrc`:
 ```bash
 export KBUILD_CC=clang
 export DKMS_SOURCE_STRATEGY=link
-# 或者根据偏好设置 DKMS_FORCE=0 来禁用 --force
+# Or set DKMS_FORCE=0 to disable the default --force behavior
 export DKMS_FORCE=1
 ```
-如果你使用 dotenv，请先安装并按需加载 `.env` 文件以设置上述变量。
+If you use dotenv, install it and load a `.env` file as needed.
 
-- 若需要生成 `compile_commands.json`（供 clangd / 静态分析工具使用），请使用 `bear` 配合 `make`：
+- To generate `compile_commands.json` for use with `clangd` or other static analysis tools, use `bear` together with `make`:
 ```bash
-# 生成 compile_commands.json（需要先安装 bear）
+# Requires bear to be installed
 bear -- make
 ```
-或者使用项目内的构建 wrapper（如果存在）：
+Or use the repository build wrapper if present:
 ```bash
 ./scripts/build.sh bear -- make
 ```
