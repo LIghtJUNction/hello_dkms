@@ -22,3 +22,5 @@ header:
     - "Module.symvers"
     - ".tmp_versions"
     - "compile_commands.json"
+    - "AGENTS.md"
+    - "**/.agents"

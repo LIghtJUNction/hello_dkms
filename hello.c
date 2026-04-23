@@ -41,6 +41,7 @@ static int __init hello_dkms_init(void)
 {
 	/* Modern kernel practice: use pr_* instead of printk(KERN_*) */
 	pr_info("Hello world!\n");
+
 	return 0;
 }
 
@@ -55,15 +56,19 @@ static void __exit hello_dkms_exit(void)
 module_init(hello_dkms_init);
 module_exit(hello_dkms_exit);
 
+#include "version.h"
 /*
  * Metadata Conventions:
  * 1. MODULE_LICENSE: Required to avoid "Tainted Kernel" warning. "GPL" means GPL v2 or later.
  * 2. MODULE_AUTHOR: Use Name <email@example.com> format.
  * 3. MODULE_ALIAS: Allows auto-loading via different names.
  */
+#ifndef MODULE_VERSION_STRING
+#define MODULE_VERSION_STRING "unspecified"
+#endif
 MODULE_AUTHOR("lightjunction <lightjunction.me@gmail.com>");
 MODULE_DESCRIPTION("Standard Hello World DKMS module");
-MODULE_VERSION("1.0.0");
+MODULE_VERSION(MODULE_VERSION_STRING);
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("hello_world");
 

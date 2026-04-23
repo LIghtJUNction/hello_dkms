@@ -8,8 +8,16 @@
 # External Makefile for hello-dkms
 KDIR ?= /lib/modules/$(shell uname -r)/build
 
-all:
+# Generate version.h from dkms.conf so MODULE_VERSION is sourced from a single place.
+PKG_VER := $(shell sed -n 's/^PACKAGE_VERSION="\([^"]*\)".*/\1/p' dkms.conf)
+VERSION_H := $(PWD)/version.h
+
+all: $(VERSION_H)
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+$(VERSION_H):
+	printf '#define MODULE_VERSION_STRING "%s"\n' "$(PKG_VER)" > $(VERSION_H)
 
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
+	-rm -f $(VERSION_H)
