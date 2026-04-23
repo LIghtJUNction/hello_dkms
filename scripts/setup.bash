@@ -167,6 +167,17 @@ if [ -f "hello.c" ]; then
         perl -0777 -i -pe '
     s/MODULE_AUTHOR\([^;]*\);/MODULE_AUTHOR("$ENV{PERL_AUTHOR}");/g;
   ' hello.c || die "failed to update hello.c"
+
+    # Also update Kbuild so the built object matches the chosen module name.
+    # Change lines like: "obj-m := hello.o" -> "obj-m := <built_module>.o"
+    if [ -f "Kbuild" ]; then
+        PERL_MOD="$built_module" \
+            perl -0777 -i -pe '
+        s/^(obj-m\s*:=\s*)[^\s]+/$1 . $ENV{PERL_MOD} . ".o"/gem;
+      ' Kbuild || die "failed to update Kbuild"
+    else
+        die "Kbuild not found"
+    fi
 else
     die "hello.c not found"
 fi
