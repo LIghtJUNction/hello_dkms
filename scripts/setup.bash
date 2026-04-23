@@ -8,7 +8,6 @@
 
 set -euo pipefail
 
-# ── Colors ──────────────────────────────────────────────────────────────
 if [ -t 2 ] || [ -r /dev/tty ]; then
     RED=$'\033[0;31m'
     GREEN=$'\033[0;32m'
@@ -68,7 +67,6 @@ confirm() {
 }
 
 ORIG_DIR="$(pwd)"
-WORK_DIR="$ORIG_DIR"
 NEED_SYNC_BACK=0
 
 current_pkg=""
@@ -107,9 +105,8 @@ if [ ! -f "dkms.conf" ] || [ ! -f "hello.c" ]; then
     tmpdir="$(mktemp -d -t hello-dkms-XXXX)"
     git clone --depth=1 https://github.com/LIghtJUNction/hello_dkms.git "$tmpdir" || die "git clone failed"
     cd "$tmpdir" || die "failed to cd to tmpdir"
-    WORK_DIR="$tmpdir"
     NEED_SYNC_BACK=1
-    printf 'Working in temporary directory: %s\n\n' "$WORK_DIR"
+    printf 'Working in temporary directory: %s\n\n' "$tmpdir"
 
     current_pkg="$(sed -n 's/^PACKAGE_NAME="\([^"]*\)".*/\1/p' dkms.conf 2>/dev/null || true)"
     current_ver="$(sed -n 's/^PACKAGE_VERSION="\([^"]*\)".*/\1/p' dkms.conf 2>/dev/null || true)"
@@ -188,13 +185,18 @@ if confirm "Update MODULE_DESCRIPTION and MODULE_ALIAS in hello.c?"; then
 fi
 
 if [ "$NEED_SYNC_BACK" -eq 1 ]; then
-    printf '\n%bSyncing generated project back to original directory...%b\n' "$BLUE" "$RESET"
-    rsync -a --delete "$WORK_DIR"/ "$ORIG_DIR"/ || die "failed to sync project back to original directory"
+    target_dir="$ORIG_DIR/$pkg"
+    printf '\n%bCreating output directory:%b %s\n' "$BLUE" "$RESET" "$target_dir"
+    mkdir -p "$target_dir"
+    rsync -a --delete "$PWD"/ "$target_dir"/ || die "failed to sync project to output directory"
     printf '%bSync complete.%b\n' "$GREEN" "$RESET"
+    printf 'Generated project is in: %s\n' "$target_dir"
+else
+    printf 'Generated project stays in current directory: %s\n' "$ORIG_DIR"
 fi
 
 printf '\n%bAll operations complete.%b\n' "$GREEN" "$RESET"
 printf 'Next steps:\n'
-printf '  - Files are now in: %s\n' "$ORIG_DIR"
-printf '  - Run make or your DKMS helper scripts.\n'
+printf '  - Enter the generated project directory\n'
+printf '  - Run make or your DKMS helper scripts\n'
 printf '\n'
