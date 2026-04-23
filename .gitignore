@@ -1,0 +1,16 @@
+*.o
+*.ko
+*.mod
+*.mod.c
+*.mod.o
+*.order
+*.symvers
+*.markers
+
+.*.cmd
+.tmp_versions/
+.cache.mk
+
+*.ko.unsigned
+*.out
+*.log

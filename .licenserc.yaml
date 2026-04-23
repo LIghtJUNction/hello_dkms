@@ -1,0 +1,24 @@
+header:
+  license:
+    spdx-id: GPL-3.0-or-later
+    content: |
+      Copyright (c) 2026 lightjunction
+
+      This program is free software: you can redistribute it and/or modify
+      it under the terms of the GNU General Public License as published by
+      the Free Software Foundation, either version 3 of the License, or
+      (at your option) any later version.
+
+    pattern: |
+      Copyright \(c\) [0-9\- \d]+ lightjunction
+
+  paths-ignore:
+    - "LICENSE"
+    - ".*"
+    - "**/*.o"
+    - "**/*.ko"
+    - "**/*.mod*"
+    - "modules.order"
+    - "Module.symvers"
+    - ".tmp_versions"
+    - "compile_commands.json"

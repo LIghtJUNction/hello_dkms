@@ -1,0 +1,17 @@
+{
+  "skill_name": "hello-dkms",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I cloned a repo that builds an out-of-tree kernel module. It has a `dkms.conf` and `hello.c`. Where should I put it so DKMS can manage it, and how do I add/build/install it so it rebuilds on kernel updates?",
+      "expected_output": "Step-by-step instructions: place the module source at `/usr/src/hello-dkms-1.0`, ensure `dkms.conf` is present, run `sudo dkms add -m hello-dkms -v 1.0`, then `sudo dkms build -m hello-dkms -v 1.0`, then `sudo dkms install -m hello-dkms -v 1.0`. Finally verify with `sudo modprobe hello_dkms` and `dmesg | tail -n 10` or `journalctl -k | tail -n 10`. Mention kernel headers must match `uname -r` and note `Module.symvers` considerations if modpost reports CRC issues.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "How do I modify the Linux kernel's memory allocator in-tree and rebuild the kernel?",
+      "expected_output": "Explain that this is in-tree kernel development (not a DKMS use case). Recommend checking out the full kernel source tree, using the appropriate `make` targets (e.g., `make menuconfig`, `make -jN`), ensuring correct toolchain and kernel config, and building/installing the kernel and modules. State explicitly that DKMS is not the right tool for modifying in-tree kernel subsystems and provide links or pointers to kernel development docs (kernel.org, local distribution build guides).",
+      "files": []
+    }
+  ]
+}

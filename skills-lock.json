@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "bash-linux": {
+      "source": "smithery.ai",
+      "sourceType": "well-known",
+      "computedHash": "c76e92617607948866ae823a4c88148ea0035b0c245d291d889462e4147dfa99"
+    },
+    "skill-creator": {
+      "source": "smithery.ai",
+      "sourceType": "well-known",
+      "computedHash": "5ea13a6d9f0d4bb694405d79acd00cadec0d21bb138c4dd10fcf3c500cb835c2"
+    }
+  }
+}
