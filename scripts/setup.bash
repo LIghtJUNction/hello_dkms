@@ -100,11 +100,41 @@ printf '  %bMODULE_AUTHOR%b: %s\n' "$BOLD" "$RESET" "${current_author:-<none>}"
 [ -n "$current_email" ] && printf '  %bMODULE_AUTHOR email%b: %s\n' "$BOLD" "$RESET" "$current_email"
 printf '\n'
 
-# Always work from a fresh clone in a temporary directory. Do not attempt to use files
-# from the current working directory — clone, modify, then move the entire temp dir into place.
+# Use a persistent user template directory to avoid repeated network clones.
+# If the template exists, attempt a safe git pull; otherwise clone into the template dir.
+# After ensuring the template is present/updated, rsync it into a fresh temporary directory
+# and continue working from that temporary copy (so later we can move it into place).
+template_dir="${HOME:-$ORIG_DIR}/.local/share/hello-dkms-template"
+
+if [ -d "$template_dir/.git" ]; then
+    printf '%bFound existing template at:%b %s\n' "$YELLOW" "$RESET" "$template_dir"
+    # Try a safe fast-forward pull first; if it fails, fall back to a fetch + reset to remote main.
+    if (cd "$template_dir" && git pull --ff-only origin main); then
+        printf 'Template updated via git pull.\n'
+    else
+        printf 'git pull failed; attempting fetch + reset to origin/main\n'
+        if (cd "$template_dir" && git fetch origin && git reset --hard origin/main); then
+            printf 'Template updated via fetch+reset.\n'
+        else
+            die "failed to update template at $template_dir"
+        fi
+    fi
+else
+    printf '%bCloning template into user template directory:%b %s\n' "$YELLOW" "$RESET" "$template_dir"
+    mkdir -p "$(dirname "$template_dir")"
+    git clone --depth=1 https://github.com/LIghtJUNction/hello_dkms.git "$template_dir" || die "git clone failed"
+fi
+
+# Create a fresh temporary working copy by rsyncing the template (exclude .git).
 tmpdir="$(mktemp -d -t hello-dkms-XXXX)"
-printf '%bCloning template into temporary directory:%b %s\n' "$YELLOW" "$RESET" "$tmpdir"
-git clone --depth=1 https://github.com/LIghtJUNction/hello_dkms.git "$tmpdir" || die "git clone failed"
+printf '%bSyncing template into temporary directory:%b %s -> %s\n' "$YELLOW" "$RESET" "$template_dir" "$tmpdir"
+if command -v rsync >/dev/null 2>&1; then
+    rsync -a --delete --exclude='.git' --exclude='.agents' "$template_dir/" "$tmpdir/" || die "rsync failed"
+else
+    # Fallback to a portable copy if rsync is not available.
+    (cd "$template_dir" && tar cf - . --exclude='.git' --exclude='.agents') | (cd "$tmpdir" && tar xpf -) || die "template copy failed"
+fi
+
 cd "$tmpdir" || die "failed to cd to tmpdir"
 NEED_SYNC_BACK=1
 printf 'Working in temporary directory: %s\n\n' "$tmpdir"
@@ -187,7 +217,7 @@ if [ -f "hello.c" ]; then
         # Replace the human-readable copyright line (e.g. "Copyright (c) 2026 lightjunction")
         s/Copyright \(c\)[^\n]*/Copyright (c) $ENV{PERL_YEAR} $ENV{PERL_AUTHOR}/g;
         # Replace the YAML pattern line that uses escaped parens (e.g. "Copyright \(c\) ... lightjunction")
-        s/Copyright \\(c\\) [0-9\\- \\d]+ [^\n]*/Copyright \\(c\\) $ENV{PERL_YEAR} $ENV{PERL_AUTHOR}/g;
+        s/Copyright \\(c\\)[^\n]*/Copyright \\(c\\) $ENV{PERL_YEAR} $ENV{PERL_AUTHOR}/g;
       ' .licenserc.yaml || die "failed to update .licenserc.yaml"
     fi
 
@@ -214,8 +244,8 @@ if [ -f "hello.c" ]; then
         # 5) Replace the explicit "modprobe hello" example with the chosen built module name
         s/\bmodprobe\s+hello\b/modprobe $ENV{PERL_MOD}/g;
 
-        # 6) Replace inline descriptive mentions like "module name is 'hello'"
-        s/module name is ['"]hello['"]/module name is "$ENV{PERL_MOD}"/g;
+        # 6) Replace inline descriptive mentions like "module name is \x27hello\x27"
+        s/module name is [\x27"]hello[\x27"]/module name is "$ENV{PERL_MOD}"/g;
 
         # 7) If README contains references to alias 'hello_world', do not change alias text automatically.
       ' README.md || die "failed to update README.md"
