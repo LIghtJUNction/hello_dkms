@@ -26,42 +26,29 @@ TIMESTAMP="$(date +%Y%m%d%H%M%S)"
 # Backups are disabled in this mode.
 BACKUP_DIR=""
 
-# Detect terminal color support via tput and /dev/tty. Use /dev/tty as tput's input so prompts
-# can be colored even when stdout/stderr are piped (e.g. curl | bash). If /dev/tty is not available
-# or tput reports fewer than 8 colors, fall back to empty strings (no escape sequences).
-RED=''
-GREEN=''
-YELLOW=''
-BLUE=''
-BOLD=''
-GREY=''
-RESET=''
+# Detect terminal color support. Provide sensible ANSI defaults so colors appear even when tput
+# isn't available (useful for curl | bash). If tput and /dev/tty are available we will override
+# these defaults with terminal-specific sequences.
+RED=$'\033[31m'
+GREEN=$'\033[32m'
+YELLOW=$'\033[33m'
+BLUE=$'\033[34m'
+BOLD=$'\033[1m'
+GREY=$'\033[2m'
+RESET=$'\033[0m'
 
+# Try to refine colors using tput via /dev/tty when possible.
 if command -v tput >/dev/null 2>&1 && [ -r /dev/tty ]; then
-    # query terminal color support using /dev/tty as input for tput
     ncolors="$(tput colors </dev/tty 2>/dev/null || echo 0)"
     if [ -n "$ncolors" ] && [ "$ncolors" -ge 8 ]; then
-        # Use tput with /dev/tty redirection so control sequences are based on the user's terminal.
-        RED="$(tput setaf 1 </dev/tty 2>/dev/null || printf '')"
-        GREEN="$(tput setaf 2 </dev/tty 2>/dev/null || printf '')"
-        YELLOW="$(tput setaf 3 </dev/tty 2>/dev/null || printf '')"
-        BLUE="$(tput setaf 4 </dev/tty 2>/dev/null || printf '')"
-        BOLD="$(tput bold </dev/tty 2>/dev/null || printf '')"
-        # Some terminals don't have a dedicated grey; try setaf 8 via /dev/tty, otherwise leave empty
-        GREY="$(tput setaf 8 </dev/tty 2>/dev/null || printf '')"
-        RESET="$(tput sgr0 </dev/tty 2>/dev/null || printf '')"
-    fi
-fi
-
-# If GREY wasn't provided by tput, fall back to ANSI "dim" (ESC[2m) to ensure muted/default look.
-# Also ensure RESET has a safe fallback (ESC[0m). Only enable these fallbacks when a controlling tty exists
-# so we don't inject escape sequences into non-interactive logs.
-if [ -r /dev/tty ]; then
-    if [ -z "$GREY" ]; then
-        GREY=$'\033[2m'
-    fi
-    if [ -z "$RESET" ]; then
-        RESET=$'\033[0m'
+        # Prefer tput output but fall back to the ANSI defaults above when tput calls fail.
+        RED="$(tput setaf 1 </dev/tty 2>/dev/null || printf '%b' "$RED")"
+        GREEN="$(tput setaf 2 </dev/tty 2>/dev/null || printf '%b' "$GREEN")"
+        YELLOW="$(tput setaf 3 </dev/tty 2>/dev/null || printf '%b' "$YELLOW")"
+        BLUE="$(tput setaf 4 </dev/tty 2>/dev/null || printf '%b' "$BLUE")"
+        BOLD="$(tput bold </dev/tty 2>/dev/null || printf '%b' "$BOLD")"
+        GREY="$(tput setaf 8 </dev/tty 2>/dev/null || printf '%b' "$GREY")"
+        RESET="$(tput sgr0 </dev/tty 2>/dev/null || printf '%b' "$RESET")"
     fi
 fi
 
@@ -258,6 +245,7 @@ if [ ! -f "dkms.conf" ] || [ ! -f "hello.c" ]; then
     fi
 fi
 
+echo
 printf 'Enter new values (leave blank to keep current):\n'
 pkg="$(prompt 'LKM package name (e.g. hello-dkms)' "$current_pkg")"
 ver="$(prompt 'LKM package version (e.g. 1.1)' "$current_ver")"
@@ -265,8 +253,13 @@ author_name="$(prompt 'Author full name' "$current_author")"
 author_email="$(prompt 'Author email' "$current_email")"
 
 # Derived values
-# built module name: prefer user input or fallback to package name with -dkms stripped
-built_module_default="${pkg%-dkms}"
+# built module name: prefer user input or fallback to package name, otherwise use current directory basename.
+if [ -n "${pkg:-}" ]; then
+    built_module_default="${pkg%-dkms}"
+else
+    built_module_default="$(basename "$(pwd)")"
+    built_module_default="${built_module_default%-dkms}"
+fi
 built_module="$(prompt "Built module name (module .ko name, default: ${built_module_default})" "$built_module_default")"
 
 echo
