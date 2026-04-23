@@ -24,3 +24,24 @@ header:
     - "compile_commands.json"
     - "AGENTS.md"
     - "**/.agents"
+
+    - "skills-lock.json"
+    - "**/*.lock"
+    - "**/*-lock.json"
+
+    - "build/**"
+    - "out/**"
+    - "dist/**"
+    - "target/**"
+    - "vendor/**"
+    - "node_modules/**"
+    - ".git/**"
+    - ".cache/**"
+
+    - "**/*.zip"
+    - "**/*.tar"
+    - "**/*.tar.gz"
+    - "**/*.tgz"
+
+    - "dkms.conf"
+    - "**/*.bin"
