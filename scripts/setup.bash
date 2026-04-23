@@ -178,6 +178,49 @@ if [ -f "hello.c" ]; then
         die "Kbuild not found"
     fi
 
+    # Update .licenserc.yaml header to use chosen author and current year, if present.
+    if [ -f ".licenserc.yaml" ]; then
+        PERL_YEAR="$(date +%Y)"
+        PERL_AUTHOR="$author_name"
+        PERL_YEAR="$PERL_YEAR" PERL_AUTHOR="$PERL_AUTHOR" \
+            perl -0777 -i -pe '
+        # Replace the human-readable copyright line (e.g. "Copyright (c) 2026 lightjunction")
+        s/Copyright \(c\)[^\n]*/Copyright (c) $ENV{PERL_YEAR} $ENV{PERL_AUTHOR}/g;
+        # Replace the YAML pattern line that uses escaped parens (e.g. "Copyright \(c\) ... lightjunction")
+        s/Copyright \\(c\\) [0-9\\- \\d]+ [^\n]*/Copyright \\(c\\) $ENV{PERL_YEAR} $ENV{PERL_AUTHOR}/g;
+      ' .licenserc.yaml || die "failed to update .licenserc.yaml"
+    fi
+
+    # Update README.md to reflect chosen package name, version, and built module name.
+    # We perform targeted substitutions to avoid accidental broad replacements.
+    if [ -f "README.md" ]; then
+        PERL_PKG="$pkg" PERL_VER="$ver" PERL_MOD="$built_module" \
+            perl -0777 -i -pe '
+        # 1) Replace the top-level title if it exactly matches "# hello-dkms"
+        s/^#\s+hello-dkms/# $ENV{PERL_PKG}/m;
+
+        # 2) Replace occurrences of the package identifier "hello-dkms" with the chosen package name.
+        # Use word boundaries to avoid clobbering unrelated text.
+        s/\bhello-dkms\b/$ENV{PERL_PKG}/g;
+
+        # 3) Update dkms add/build/install command module name usages
+        s/(dkms\s+add\s+-m\s+)hello-dkms/$1 . $ENV{PERL_PKG}/gem;
+        s/(dkms\s+build\s+-m\s+)hello-dkms/$1 . $ENV{PERL_PKG}/gem;
+        s/(dkms\s+install\s+-m\s+)hello-dkms/$1 . $ENV{PERL_PKG}/gem;
+
+        # 4) Update /usr/src/hello-dkms occurrences to use chosen package
+        s/\/usr\/src\/hello-dkms\b/\/usr\/src\/$ENV{PERL_PKG}/g;
+
+        # 5) Replace the explicit "modprobe hello" example with the chosen built module name
+        s/\bmodprobe\s+hello\b/modprobe $ENV{PERL_MOD}/g;
+
+        # 6) Replace inline descriptive mentions like "module name is 'hello'"
+        s/module name is ['"]hello['"]/module name is '\''$ENV{PERL_MOD}'\''/g;
+
+        # 7) If README contains references to alias 'hello_world', do not change alias text automatically.
+      ' README.md || die "failed to update README.md"
+    fi
+
     # Rename the original source to match the chosen built module name.
     mv -- "hello.c" "${built_module}.c" || die "failed to rename hello.c to ${built_module}.c"
 else
