@@ -77,10 +77,10 @@ MODULE_WEAKDEP("");
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
     // 6.13
-    MODULE_IMPORT_NS("VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");
+    MODULE_IMPORT_NS("xxx");
 #else
     // old
-    MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+    MODULE_IMPORT_NS(xxx);
 #endif
 
 /*
