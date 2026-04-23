@@ -169,7 +169,6 @@ if [ -f "hello.c" ]; then
   ' hello.c || die "failed to update hello.c"
 
     # Also update Kbuild so the built object matches the chosen module name.
-    # Change lines like: "obj-m := hello.o" -> "obj-m := <built_module>.o"
     if [ -f "Kbuild" ]; then
         PERL_MOD="$built_module" \
             perl -0777 -i -pe '
@@ -178,6 +177,9 @@ if [ -f "hello.c" ]; then
     else
         die "Kbuild not found"
     fi
+
+    # Rename the original source to match the chosen built module name.
+    mv -- "hello.c" "${built_module}.c" || die "failed to rename hello.c to ${built_module}.c"
 else
     die "hello.c not found"
 fi
