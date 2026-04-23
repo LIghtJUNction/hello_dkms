@@ -7,20 +7,12 @@
 # (at your option) any later version.
 
 # Interactive setup script for hello-dkms project
-#
-# Purpose:
-# - Prompt for LKM package name, version, author name and email.
-# - Update dkms.conf (PACKAGE_NAME, PACKAGE_VERSION, BUILT_MODULE_NAME[0]).
-# - Update hello.c (MODULE_AUTHOR, optionally MODULE_DESCRIPTION/MODULE_ALIAS).
-# - Keep README and directory name untouched.
-#
 set -euo pipefail
 
 SCRIPT_NAME="$(basename "$0")"
 TIMESTAMP="$(date +%Y%m%d%H%M%S)"
-BACKUP_DIR=""
 
-# ── Colors: use ANSI directly; disable if not on a terminal ─────────────
+# ── Colors ──────────────────────────────────────────────────────────────
 if [ -t 2 ] || [ -r /dev/tty ]; then
     RED=$'\033[0;31m'
     GREEN=$'\033[0;32m'
@@ -79,12 +71,12 @@ confirm() {
     esac
 }
 
-backup_file() {
-    # Backups disabled in this version
-    return 0
-}
+# ── Save original working directory ─────────────────────────────────────
+ORIG_DIR="$(pwd)"
+WORK_DIR="$ORIG_DIR"
+CLONED_FROM_TMP=0
 
-# ── Read current values ──────────────────────────────────────────────────
+# ── Read current values from current dir ────────────────────────────────
 current_pkg=""
 current_ver=""
 current_author=""
@@ -104,7 +96,6 @@ if [[ "$current_author" =~ \<([^>]+)\> ]]; then
     current_author="$(echo "$current_author" | sed 's/ *<.*>//')"
 fi
 
-# git config fallback
 git_name="$(git config --global user.name 2>/dev/null || true)"
 git_email="$(git config --global user.email 2>/dev/null || true)"
 [ -z "$current_author" ] && [ -n "$git_name" ] && current_author="$git_name"
@@ -117,19 +108,17 @@ printf '  %bMODULE_AUTHOR%b: %s\n' "$BOLD" "$RESET" "${current_author:-<none>}"
 [ -n "$current_email" ] && printf '  %bMODULE_AUTHOR email%b: %s\n' "$BOLD" "$RESET" "$current_email"
 printf '\n'
 
-# ── If files are missing, clone the repo and continue there ─────────────
+# ── If project files are missing, clone to tmp and work there ───────────
 if [ ! -f "dkms.conf" ] || [ ! -f "hello.c" ]; then
-    printf '%bWarning:%b project files (dkms.conf, hello.c) are missing in the current directory.\n' "$YELLOW" "$RESET"
+    printf '%bWarning:%b project files (dkms.conf, hello.c) are missing in current directory.\n' "$YELLOW" "$RESET"
     tmpdir="$(mktemp -d -t hello-dkms-XXXX)"
     printf 'Cloning repository into %s...\n' "$tmpdir"
     git clone --depth=1 https://github.com/LIghtJUNction/hello_dkms.git "$tmpdir" || die "git clone failed; aborting"
-    printf 'Switching to %s\n' "$tmpdir"
     cd "$tmpdir" || die "failed to cd to $tmpdir"
-    BACKUP_DIR=""
-    printf 'Now operating in: %s\n' "$(pwd)"
-    printf 'Backups are disabled.\n\n'
+    WORK_DIR="$tmpdir"
+    CLONED_FROM_TMP=1
+    printf 'Now operating in: %s\n\n' "$(pwd)"
 
-    # Re-read from cloned repo, but do not trust template placeholders
     current_pkg="$(sed -n 's/^PACKAGE_NAME="\([^"]*\)".*/\1/p' dkms.conf 2>/dev/null || true)"
     current_ver="$(sed -n 's/^PACKAGE_VERSION="\([^"]*\)".*/\1/p' dkms.conf 2>/dev/null || true)"
     [[ "$current_pkg" =~ ^(hello-dkms|your-module|)$ ]] && current_pkg=""
@@ -163,9 +152,6 @@ if ! confirm "Proceed with the above changes?"; then
 fi
 
 # ── Update dkms.conf ─────────────────────────────────────────────────────
-printf '%bUpdating dkms.conf...%b\n' "$BLUE" "$RESET"
-[ -f "dkms.conf" ] || die "dkms.conf not found in current directory"
-
 PERL_PKG="$pkg" PERL_VER="$ver" PERL_MOD="$built_module" \
     perl -0777 -i -pe '
   s/^(PACKAGE_NAME=")[^"]*(")/$1 . $ENV{PERL_PKG} . $2/gem;
@@ -177,10 +163,7 @@ PERL_PKG="$pkg" PERL_VER="$ver" PERL_MOD="$built_module" \
   }
 ' dkms.conf || die "failed to update dkms.conf"
 
-printf '%bOK%b dkms.conf updated.\n' "$GREEN" "$RESET"
-
-# ── Update hello.c author ────────────────────────────────────────────────
-printf '%bUpdating hello.c author...%b\n' "$BLUE" "$RESET"
+# ── Update hello.c ───────────────────────────────────────────────────────
 if [ -f "hello.c" ]; then
     author_entry="$author_name"
     [ -n "$author_email" ] && author_entry="$author_entry <$author_email>"
@@ -189,15 +172,11 @@ if [ -f "hello.c" ]; then
         perl -0777 -i -pe '
     s/MODULE_AUTHOR\([^;]*\);/MODULE_AUTHOR("$ENV{PERL_AUTHOR}");/g;
   ' hello.c || die "failed to update hello.c"
-
-    printf '%bOK%b hello.c updated.\n' "$GREEN" "$RESET"
 else
-    printf '%bwarning:%b hello.c not found; skipping\n' "$YELLOW" "$RESET"
+    die "hello.c not found"
 fi
 
-# ── Optionally update MODULE_DESCRIPTION and MODULE_ALIAS ────────────────
 if confirm "Update MODULE_DESCRIPTION and MODULE_ALIAS in hello.c?"; then
-    # Construct defaults from current input, not from file contents.
     default_desc="${pkg} DKMS module"
     default_alias="${built_module}"
 
@@ -216,13 +195,19 @@ if confirm "Update MODULE_DESCRIPTION and MODULE_ALIAS in hello.c?"; then
       s/(MODULE_LICENSE\("[^"]*"\);)/$1\nMODULE_ALIAS("$ENV{PERL_ALIAS}");/m;
     }
   ' hello.c || die "failed to update description/alias"
-
-    printf '%bOK%b description/alias updated.\n' "$GREEN" "$RESET"
 fi
 
-# ── Do NOT rename README, do NOT move directory ─────────────────────────
+# ── If we cloned to tmp, sync files back to original cwd ─────────────────
+if [ "$CLONED_FROM_TMP" -eq 1 ]; then
+    printf '\n%bSyncing modified files back to original directory...%b\n' "$BLUE" "$RESET"
+    cp -f "$WORK_DIR/dkms.conf" "$ORIG_DIR/dkms.conf"
+    cp -f "$WORK_DIR/hello.c" "$ORIG_DIR/hello.c"
+    [ -f "$WORK_DIR/README.md" ] && [ ! -f "$ORIG_DIR/README.md" ] && cp -f "$WORK_DIR/README.md" "$ORIG_DIR/README.md" || true
+    printf '%bDone.%b\n' "$GREEN" "$RESET"
+fi
+
 printf '\n%bAll operations complete.%b\n' "$GREEN" "$RESET"
 printf 'Next steps:\n'
-printf '  - Inspect changes and run %bmake%b or your DKMS helper scripts.\n' "$BOLD" "$RESET"
-printf '  - If needed, build/install the module manually.\n'
+printf '  - Inspect changes in %s\n' "$ORIG_DIR"
+printf '  - Run make or your DKMS helper scripts.\n'
 printf '\n'
