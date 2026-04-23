@@ -136,10 +136,19 @@ sed_replace_line() {
 }
 
 # Read current values
-current_pkg="$(sed -n 's/^PACKAGE_NAME="\([^"]*\)".*/\1/p' dkms.conf || true)"
-current_ver="$(sed -n 's/^PACKAGE_VERSION="\([^"]*\)".*/\1/p' dkms.conf || true)"
-current_author="$(sed -n -E 's/^MODULE_AUTHOR\(\"(.*)\"\);.*/\1/p' hello.c || true)"
+# Initialize to empty; populate only if files exist to avoid noisy sed errors.
+current_pkg=""
+current_ver=""
+current_author=""
 current_email=""
+# Try to read current values from files if present, suppressing sed stderr so missing files do not print errors.
+if [ -f "dkms.conf" ]; then
+    current_pkg="$(sed -n 's/^PACKAGE_NAME="\([^"]*\)".*/\1/p' dkms.conf 2>/dev/null || true)"
+    current_ver="$(sed -n 's/^PACKAGE_VERSION="\([^"]*\)".*/\1/p' dkms.conf 2>/dev/null || true)"
+fi
+if [ -f "hello.c" ]; then
+    current_author="$(sed -n -E 's/^MODULE_AUTHOR\(\"(.*)\"\);.*/\1/p' hello.c 2>/dev/null || true)"
+fi
 # Try to split author into name and email if possible
 if [[ "$current_author" =~ \<([^>]+)\> ]]; then
     current_email="${BASH_REMATCH[1]}"
@@ -154,43 +163,21 @@ printf '  MODULE_AUTHOR: %s\n' "${current_author:-<none>}"
 [ -n "$current_email" ] && printf '  MODULE_AUTHOR email: %s\n' "$current_email"
 
 echo
-# If key project files are missing, auto-clone in non-interactive mode; otherwise offer to clone.
-# This makes the script safe to run as an online script (curl | bash) by automatically
-# performing a shallow git clone when stdin is not a TTY.
+# If key project files are missing, clone the repository into a temporary directory and continue there.
+# This is unconditional (no interactive prompt) so the script is safe for `curl | bash` from an empty dir.
 if [ ! -f "dkms.conf" ] || [ ! -f "hello.c" ]; then
     echo "Warning: one or more project files (dkms.conf, hello.c) are missing in the current directory."
-    # Non-interactive (piped) runs commonly have stdin not a TTY. In that case auto-clone.
-    if ! [ -t 0 ]; then
-        tmpdir="$(mktemp -d -t hello-dkms-XXXX)"
-        echo "Non-interactive run detected; cloning repository into $tmpdir..."
-        if git clone --depth=1 https://github.com/LIghtJUNction/hello_dkms.git "$tmpdir"; then
-            echo "Switching to $tmpdir"
-            cd "$tmpdir" || die "failed to cd to $tmpdir"
-            BACKUP_DIR="./.setup-backups-${TIMESTAMP}"
-            mkdir -p "$BACKUP_DIR"
-            echo "Now operating in: $(pwd)"
-            echo "Backups will be created under: $BACKUP_DIR"
-        else
-            die "git clone failed; aborting"
-        fi
+    tmpdir="$(mktemp -d -t hello-dkms-XXXX)"
+    echo "Cloning repository into $tmpdir..."
+    if git clone --depth=1 https://github.com/LIghtJUNction/hello_dkms.git "$tmpdir"; then
+        echo "Switching to $tmpdir"
+        cd "$tmpdir" || die "failed to cd to $tmpdir"
+        BACKUP_DIR="./.setup-backups-${TIMESTAMP}"
+        mkdir -p "$BACKUP_DIR"
+        echo "Now operating in: $(pwd)"
+        echo "Backups will be created under: $BACKUP_DIR"
     else
-        # Interactive: ask the user as before
-        if confirm "Would you like to git-clone the repository into a temporary directory and continue there?"; then
-            tmpdir="$(mktemp -d -t hello-dkms-XXXX)"
-            echo "Cloning repository into $tmpdir..."
-            if git clone --depth=1 https://github.com/LIghtJUNction/hello_dkms.git "$tmpdir"; then
-                echo "Switching to $tmpdir"
-                cd "$tmpdir" || die "failed to cd to $tmpdir"
-                BACKUP_DIR="./.setup-backups-${TIMESTAMP}"
-                mkdir -p "$BACKUP_DIR"
-                echo "Now operating in: $(pwd)"
-                echo "Backups will be created under: $BACKUP_DIR"
-            else
-                die "git clone failed; aborting"
-            fi
-        else
-            echo "Continuing in current directory; operations may fail if required files are missing."
-        fi
+        die "git clone failed; aborting"
     fi
 fi
 
