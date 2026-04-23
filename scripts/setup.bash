@@ -154,19 +154,18 @@ printf '  MODULE_AUTHOR: %s\n' "${current_author:-<none>}"
 [ -n "$current_email" ] && printf '  MODULE_AUTHOR email: %s\n' "$current_email"
 
 echo
-# If key project files are missing, offer to clone the repository into a temporary directory
-# and continue there. This makes the script safe to run as an online script (curl | bash).
+# If key project files are missing, auto-clone in non-interactive mode; otherwise offer to clone.
+# This makes the script safe to run as an online script (curl | bash) by automatically
+# performing a shallow git clone when stdin is not a TTY.
 if [ ! -f "dkms.conf" ] || [ ! -f "hello.c" ]; then
     echo "Warning: one or more project files (dkms.conf, hello.c) are missing in the current directory."
-    if confirm "Would you like to git-clone the repository into a temporary directory and continue there?"; then
+    # Non-interactive (piped) runs commonly have stdin not a TTY. In that case auto-clone.
+    if ! [ -t 0 ]; then
         tmpdir="$(mktemp -d -t hello-dkms-XXXX)"
-        echo "Cloning repository into $tmpdir..."
-        # Attempt a shallow clone of the canonical repository for this script.
-        # If you maintain a different canonical upstream, update the URL below.
+        echo "Non-interactive run detected; cloning repository into $tmpdir..."
         if git clone --depth=1 https://github.com/LIghtJUNction/hello_dkms.git "$tmpdir"; then
             echo "Switching to $tmpdir"
             cd "$tmpdir" || die "failed to cd to $tmpdir"
-            # Recompute / reaffirm backup dir path (keeps original timestamp but is relative to new cwd)
             BACKUP_DIR="./.setup-backups-${TIMESTAMP}"
             mkdir -p "$BACKUP_DIR"
             echo "Now operating in: $(pwd)"
@@ -175,7 +174,23 @@ if [ ! -f "dkms.conf" ] || [ ! -f "hello.c" ]; then
             die "git clone failed; aborting"
         fi
     else
-        echo "Continuing in current directory; operations may fail if required files are missing."
+        # Interactive: ask the user as before
+        if confirm "Would you like to git-clone the repository into a temporary directory and continue there?"; then
+            tmpdir="$(mktemp -d -t hello-dkms-XXXX)"
+            echo "Cloning repository into $tmpdir..."
+            if git clone --depth=1 https://github.com/LIghtJUNction/hello_dkms.git "$tmpdir"; then
+                echo "Switching to $tmpdir"
+                cd "$tmpdir" || die "failed to cd to $tmpdir"
+                BACKUP_DIR="./.setup-backups-${TIMESTAMP}"
+                mkdir -p "$BACKUP_DIR"
+                echo "Now operating in: $(pwd)"
+                echo "Backups will be created under: $BACKUP_DIR"
+            else
+                die "git clone failed; aborting"
+            fi
+        else
+            echo "Continuing in current directory; operations may fail if required files are missing."
+        fi
     fi
 fi
 
