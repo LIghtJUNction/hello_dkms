@@ -26,8 +26,9 @@ TIMESTAMP="$(date +%Y%m%d%H%M%S)"
 # Backups are disabled in this mode.
 BACKUP_DIR=""
 
-# Detect terminal color support via tput. If tput or a color-capable terminal is not available,
-# fall back to empty strings so output is plain (no escape sequences).
+# Detect terminal color support via tput and /dev/tty. Use /dev/tty as tput's input so prompts
+# can be colored even when stdout/stderr are piped (e.g. curl | bash). If /dev/tty is not available
+# or tput reports fewer than 8 colors, fall back to empty strings (no escape sequences).
 RED=''
 GREEN=''
 YELLOW=''
@@ -36,19 +37,31 @@ BOLD=''
 GREY=''
 RESET=''
 
-if command -v tput >/dev/null 2>&1 && [ -t 1 ]; then
-    # query terminal color support; tput may fail in some environments
-    ncolors="$(tput colors 2>/dev/null || echo 0)"
+if command -v tput >/dev/null 2>&1 && [ -r /dev/tty ]; then
+    # query terminal color support using /dev/tty as input for tput
+    ncolors="$(tput colors </dev/tty 2>/dev/null || echo 0)"
     if [ -n "$ncolors" ] && [ "$ncolors" -ge 8 ]; then
-        # Use tput so we respect the terminal capabilities
-        RED="$(tput setaf 1 2>/dev/null || printf '')"
-        GREEN="$(tput setaf 2 2>/dev/null || printf '')"
-        YELLOW="$(tput setaf 3 2>/dev/null || printf '')"
-        BLUE="$(tput setaf 4 2>/dev/null || printf '')"
-        BOLD="$(tput bold 2>/dev/null || printf '')"
-        # Some terminals don't have a dedicated grey; try setaf 8, otherwise leave empty
-        GREY="$(tput setaf 8 2>/dev/null || printf '')"
-        RESET="$(tput sgr0 2>/dev/null || printf '')"
+        # Use tput with /dev/tty redirection so control sequences are based on the user's terminal.
+        RED="$(tput setaf 1 </dev/tty 2>/dev/null || printf '')"
+        GREEN="$(tput setaf 2 </dev/tty 2>/dev/null || printf '')"
+        YELLOW="$(tput setaf 3 </dev/tty 2>/dev/null || printf '')"
+        BLUE="$(tput setaf 4 </dev/tty 2>/dev/null || printf '')"
+        BOLD="$(tput bold </dev/tty 2>/dev/null || printf '')"
+        # Some terminals don't have a dedicated grey; try setaf 8 via /dev/tty, otherwise leave empty
+        GREY="$(tput setaf 8 </dev/tty 2>/dev/null || printf '')"
+        RESET="$(tput sgr0 </dev/tty 2>/dev/null || printf '')"
+    fi
+fi
+
+# If GREY wasn't provided by tput, fall back to ANSI "dim" (ESC[2m) to ensure muted/default look.
+# Also ensure RESET has a safe fallback (ESC[0m). Only enable these fallbacks when a controlling tty exists
+# so we don't inject escape sequences into non-interactive logs.
+if [ -r /dev/tty ]; then
+    if [ -z "$GREY" ]; then
+        GREY=$'\033[2m'
+    fi
+    if [ -z "$RESET" ]; then
+        RESET=$'\033[0m'
     fi
 fi
 
@@ -220,6 +233,9 @@ printf '  %b: %s\n' "${BOLD}MODULE_AUTHOR${RESET}" "${current_author:-<none>}"
 [ -n "$current_email" ] && printf '  %b: %s\n' "${BOLD}MODULE_AUTHOR email${RESET}" "$current_email"
 
 echo
+
+# visual separation: blank line to make output easier to read
+echo
 # If key project files are missing, clone the repository into a temporary directory and continue there.
 # This is unconditional (no interactive prompt) so the script is safe for `curl | bash` from an empty dir.
 if [ ! -f "dkms.conf" ] || [ ! -f "hello.c" ]; then
@@ -233,6 +249,10 @@ if [ ! -f "dkms.conf" ] || [ ! -f "hello.c" ]; then
         BACKUP_DIR=""
         echo "Now operating in: $(pwd)"
         echo "Backups are disabled."
+
+        # visual separation: blank line after clone messages
+        echo
+
     else
         die "git clone failed; aborting"
     fi
