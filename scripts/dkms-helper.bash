@@ -286,14 +286,123 @@ dkms-update() {
 
 dkms-uninstall() {
     _check_dkms_conf || return 1
-    local pkg ver
+    local pkg ver mod src_link varlib modfiles reply target
     pkg="$(_get_pkg)" || return 1
     ver="$(_get_ver)" || return 1
+    mod="$(_get_mod_or_fallback)" || true
+
     printf 'Removing %s v%s from DKMS\n' "$pkg" "$ver"
-    sudo dkms remove -m "$pkg" -v "$ver" --all || {
-        printf 'dkms remove failed\n' >&2
-        return 1
-    }
+
+    # Try the normal DKMS remove first; continue even if it reports failure so we can offer cleanup.
+    if ! sudo dkms remove -m "$pkg" -v "$ver" --all; then
+        printf 'dkms remove reported failure for %s %s — offering cleanup options\n' "$pkg" "$ver" >&2
+    else
+        printf 'dkms remove completed (or nothing to remove) for %s %s\n' "$pkg" "$ver"
+    fi
+
+    # 1) /usr/src cleanup: check for symlink or directory for this package/version.
+    src_link="/usr/src/${pkg}-${ver}"
+    if [ -L "$src_link" ] || [ -d "$src_link" ]; then
+        target="$(readlink -f "$src_link" 2>/dev/null || true)"
+        if [ -L "$src_link" ] && [ ! -e "$target" ]; then
+            printf 'Detected broken symlink: %s -> %s\n' "$src_link" "$target"
+            if [ -c /dev/tty ]; then
+                printf 'Remove broken /usr/src link %s? [y/N]: ' "$src_link" >/dev/tty
+                read -r reply </dev/tty || reply=""
+            else
+                reply=""
+            fi
+            case "$reply" in
+            [yY] | [yY][eE][sS])
+                sudo rm -rf "$src_link" && printf 'Removed %s\n' "$src_link"
+                ;;
+            *)
+                printf 'Left %s in place\n' "$src_link"
+                ;;
+            esac
+        elif [ -d "$src_link" ]; then
+            # Directory exists; offer to remove if empty or with confirmation if non-empty.
+            if [ -z "$(ls -A "$src_link" 2>/dev/null)" ]; then
+                if [ -c /dev/tty ]; then
+                    printf 'Remove empty /usr/src dir %s? [y/N]: ' "$src_link" >/dev/tty
+                    read -r reply </dev/tty || reply=""
+                else
+                    reply=""
+                fi
+                case "$reply" in
+                [yY] | [yY][eE][sS])
+                    sudo rm -rf "$src_link" && printf 'Removed %s\n' "$src_link"
+                    ;;
+                *)
+                    printf 'Left %s in place\n' "$src_link"
+                    ;;
+                esac
+            else
+                if [ -c /dev/tty ]; then
+                    printf '/usr/src/%s exists and is not empty. Remove it (recursively)? [y/N]: ' "$pkg-$ver" >/dev/tty
+                    read -r reply </dev/tty || reply=""
+                else
+                    reply=""
+                fi
+                case "$reply" in
+                [yY] | [yY][eE][sS])
+                    sudo rm -rf "$src_link" && printf 'Removed %s\n' "$src_link"
+                    ;;
+                *)
+                    printf 'Left %s in place\n' "$src_link"
+                    ;;
+                esac
+            fi
+        fi
+    fi
+
+    # 2) /var/lib/dkms cleanup: offer to remove DKMS state if present.
+    varlib="/var/lib/dkms/$pkg/$ver"
+    if [ -d "$varlib" ]; then
+        printf 'Found DKMS state at %s\n' "$varlib"
+        if [ -c /dev/tty ]; then
+            printf 'Remove /var/lib/dkms entry %s? [y/N]: ' "$varlib" >/dev/tty
+            read -r reply </dev/tty || reply=""
+        else
+            reply=""
+        fi
+        case "$reply" in
+        [yY] | [yY][eE][sS])
+            # Remove only the specific version directory
+            sudo rm -rf "$varlib" && printf 'Removed %s\n' "$varlib"
+            ;;
+        *)
+            printf 'Left %s in place\n' "$varlib"
+            ;;
+        esac
+    fi
+
+    # 3) Installed module files cleanup under /lib/modules/*/updates/dkms/
+    if [ -n "$mod" ]; then
+        # Find files that look like the module for any kernel's updates/dkms directory.
+        modfiles="$(find /lib/modules -path '*/updates/dkms/*' -type f -name "${mod}.*" 2>/dev/null || true)"
+        if [ -n "$modfiles" ]; then
+            printf 'Found installed module files for %s:\n%s\n' "$mod" "$modfiles"
+            if [ -c /dev/tty ]; then
+                printf 'Remove these module files? [y/N]: ' >/dev/tty
+                read -r reply </dev/tty || reply=""
+            else
+                reply=""
+            fi
+            case "$reply" in
+            [yY] | [yY][eE][sS])
+                # Remove listed files and refresh module dependencies.
+                printf '%s\n' "$modfiles" | xargs -r sudo rm -f
+                sudo depmod -a || printf 'depmod failed (you may need to run it manually)\n' >&2
+                printf 'Removed module files and ran depmod\n'
+                ;;
+            *)
+                printf 'Left module files in place\n'
+                ;;
+            esac
+        fi
+    fi
+
     printf 'Uninstall complete.\n'
 }
 
