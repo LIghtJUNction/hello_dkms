@@ -309,4 +309,7 @@ printf '\n%bAll operations complete.%b\n' "$GREEN" "$RESET"
 printf 'Next steps:\n'
 printf '  - Enter the generated project directory\n'
 printf '  - Run make or your DKMS helper scripts\n'
+printf '  - Run sudo modprobe %s to load the module\n' "$built_module"
+printf '  - Run sudo modprobe -r %s to unload the module\n' "$built_module"
+printf '  - source scripts/dkms-helper.bash ( dki : install / dku : update / dkrm : remove)\n'
 printf '\n'

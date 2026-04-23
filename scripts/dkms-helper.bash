@@ -159,6 +159,41 @@ dkms-update() {
         return 1
     fi
 
+    # After successful depmod - check for other installed/built versions of this package
+    # (exclude the current $ver) and offer to remove them interactively.
+    _other_versions="$(dkms status | awk -v pkg="$pkg" -v ver="$ver" '
+    {
+      if (match($0, /^([^\/]+)\/([^,]+),/, m)) {
+        name=m[1]; v=m[2];
+        if (name==pkg && v!=ver) print v " -- " $0;
+      }
+    }')"
+
+    if [ -n "$_other_versions" ]; then
+        printf '\nFound other installed/built versions for %s:\n%s\n' "$pkg" "$_other_versions"
+        # Prompt on the controlling tty when available.
+        if [ -c /dev/tty ]; then
+            printf 'Remove these older versions? [y/N]: ' >/dev/tty
+            read -r _resp </dev/tty || _resp=""
+        else
+            _resp=""
+        fi
+
+        case "$_resp" in
+        [yY] | [yY][eE][sS])
+            printf 'Removing older versions for %s...\n' "$pkg"
+            # Extract the version token (first field) and remove each.
+            printf '%s\n' "$_other_versions" | awk '{print $1}' | while read -r oldver; do
+                printf 'Removing %s version %s\n' "$pkg" "$oldver"
+                sudo dkms remove -m "$pkg" -v "$oldver" --all || printf 'Warning: failed to remove %s %s\n' "$pkg" "$oldver"
+            done
+            ;;
+        *)
+            printf 'Left older versions in place.\n'
+            ;;
+        esac
+    fi
+
     printf 'Update complete. Showing recent kernel logs and dkms status:\n\n'
 
     # Show kernel logs: prefer journalctl if available, otherwise dmesg
