@@ -23,7 +23,8 @@ header:
     - ".tmp_versions"
     - "compile_commands.json"
     - "AGENTS.md"
-    - "**/.agents"
+    - "**/.agents/**/*"
+    - ".cache/**"
 
     - "skills-lock.json"
     - "**/*.lock"
