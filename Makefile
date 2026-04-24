@@ -11,10 +11,13 @@ export CC=clang
 # External Makefile for hello-dkms
 KDIR ?= /lib/modules/$(shell uname -r)/build
 
-.PHONY: all clean compdb format check-format
+.PHONY: all clean compdb format check-format install uninstall update print-vars load unload reload
 
 # Generate version.h from dkms.conf so MODULE_VERSION is sourced from a single place.
-PKG_VER := $(shell sed -n 's/^PACKAGE_VERSION="\\([^"]*\\)".*/\\1/p' dkms.conf)
+PKG_VER := $(shell sed -n 's/^PACKAGE_VERSION="\([^"]*\)".*/\1/p' dkms.conf)
+PKG_NAME := $(shell sed -n 's/^PACKAGE_NAME="\([^"]*\)".*/\1/p' dkms.conf)
+BUILT_MODULE_NAME := $(shell sed -n 's/^BUILT_MODULE_NAME\[0\]="\([^"]*\)".*/\1/p' dkms.conf)
+
 VERSION_H := $(PWD)/version.h
 
 all: $(VERSION_H)
@@ -39,3 +42,31 @@ check-format:
 		grep -q "<replacement " && \
 		(echo "format error, please run make format"; exit 1) || \
 		echo "format OK"
+
+print-vars:
+	@echo "BUILT_MODULE_NAME = $(BUILT_MODULE_NAME)"
+	@echo "PKG_NAME        = $(PKG_NAME)"
+	@echo "PKG_VER         = $(PKG_VER)"
+
+install:
+	. scripts/dkms-helper.bash; \
+	dki
+
+uninstall:
+	. scripts/dkms-helper.bash; \
+	dkrm
+
+update:
+	. scripts/dkms-helper.bash; \
+	dku
+
+load:
+	sudo modprobe $(BUILT_MODULE_NAME) || $(MAKE) install
+	journalctl -k -f
+unload:
+	sudo modprobe -r $(BUILT_MODULE_NAME) || echo "loaded?"
+	journalctl -k -f
+reload:
+	$(MAKE) unload; \
+	$(MAKE) load;
+	journalctl -k -f
