@@ -39,6 +39,15 @@ sudo pacman -S base-devel dkms linux-headers
 ---
 
 ## 3. Build and install
+```bash
+Just need to learn to use:
+make install
+make update
+make uninstall
+make ...
+Equivalent to the following
+```
+
 
 ```bash
 # Extract PACKAGE_VERSION from dkms.conf
