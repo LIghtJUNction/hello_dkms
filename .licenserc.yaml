@@ -46,3 +46,4 @@ header:
 
     - "dkms.conf"
     - "**/*.bin"
+    - ".json"
